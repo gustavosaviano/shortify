@@ -46,6 +46,8 @@ A record of hypotheses that turned out wrong, how each was tested, and what was 
 | SSH failing right after launch meant a firewall block | Waited, then checked Floci's logs | sshd starts 34 s after `running`; it was timing |
 | The enforcement flag killed an instance during a Floci recreate | Compared the container exit time with Floci's start time | The instance died 9 s *before* the new Floci started, so it was the old Floci's shutdown |
 
+**Reboot test (end of Phase 2):** stop the stack, restart Docker and WSL, then recover using only the runbook. Four predictions held: `compose stop` stops the instance, `group_add` survives the restart, RDS returns with its data, and a `stop`/`start` keeps the VPC network attachment. One missed: the API reported the dead instance as `terminated`, not `running`. The environment went from a cold start to a healthy `/health` by following the runbook step by step.
+
 **Takeaways:**
 - **Replace, don't repair.** Only a fresh launch gives a usable instance on this image.
 - **`running` doesn't mean ready.**
@@ -63,6 +65,16 @@ A record of hypotheses that turned out wrong, how each was tested, and what was 
 | NACLs are ignored | Associated a deny-all NACL with the instance's subnet | Confirmed: nothing changed |
 
 **Takeaway:** the emulator can't validate network security controls on this setup. The honest position is "designed and reasoned, validated only on real AWS", not "tested".
+
+## The shell start-up line
+
+| | |
+|---|---|
+| **Symptom** | After a reboot, opening a terminal didn't start the stack |
+| **Hypotheses** | (1) Docker wasn't ready when the shell started. (2) `.bashrc` held an outdated line |
+| **Test** | `grep -n floci ~/.bashrc` |
+| **Finding** | (2): the line started an obsolete stack in another directory, with all output sent to `/dev/null`. The same line explained a mysterious second Floci instance earlier |
+| **Takeaway** | Don't silence errors in automation, and prefer an explicit start step over a hidden side effect |
 
 ## Smaller corrections
 
@@ -105,13 +117,14 @@ The end-of-phase test round, run on a healthy baseline:
 | — | Why did SSH fail on a fresh launch? | Timing | ✓ sshd appears after 34 s |
 | — | Why did the control instance die during a recreate? | The new flag | ✗ The old Floci's shutdown |
 | — | Does `http://localhost/` reach the ALB? | Yes | ✓ Yes |
+| Reboot | Stop the stack, restart Docker/WSL, recover by the runbook | Instance stopped; `group_add` holds; RDS back; network kept; API says `running` | ✓ ✓ ✓ ✓ ✗ (API said `terminated`) |
 
 ---
 
 ## Open questions
 
 1. Does Floci's enforcement flag filter instance-to-instance traffic, while leaving its own traffic and published SSH unfiltered? Test: two instances, with the rule revoked between them.
-2. Does `docker compose stop` also stop instances (edge case #26)?
+2. Why does Floci report a stopped instance as `terminated` after a restart, but `running` after a recreate? (`compose stop` stopping instances is now confirmed.)
 3. Is there a durable fix for Floci's VPC network attachment after a recreate?
 4. Does real AWS reject `--targets Id=`? (Probably, with a validation error.)
 5. Does `restart: unless-stopped` let the stack recover by itself after a reboot?

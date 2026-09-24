@@ -81,7 +81,8 @@ The app is started with `nohup`, and any restart kills it, on AWS as well. The r
 From Floci's logs: the container is `running` → 16 s later the key is injected → 34 s later sshd starts (along with the IMDS `socat` proxy). SSH right after the waiter returns fails with `Connection reset by peer`. The same holds on AWS: `running` only means the VM has started. Use `aws ec2 wait instance-status-ok` and retry SSH.
 
 **26. A Floci shutdown stops its instances.** *(observed)*
-During a Floci recreate, the instance container was SIGKILLed (`Exited (137)`) at 22:40:25, 9 seconds *before* the new Floci started at 22:40:34. So it was the old Floci stopping it on shutdown. An earlier recreate left the instance running only because that Floci had no Docker access. Afterwards, the API still reported `running`. Not yet confirmed: whether `docker compose stop` also stops instances, which would mean every session starts with a replacement.
+During a Floci recreate, the instance container was SIGKILLed (`Exited (137)`) at 22:40:25, 9 seconds *before* the new Floci started at 22:40:34. So it was the old Floci stopping it on shutdown. An earlier recreate left the instance running only because that Floci had no Docker access. Afterwards, the API still reported `running`.
+**Confirmed with a reboot test:** a plain `docker compose stop` also stops the instance (`Exited (137)` seconds after Floci itself), so every session starts with an instance replacement. After that stop and a full Docker/WSL restart, the API reported the instance as `terminated` rather than `running`. Why the two cases differ is unknown. In the same test, the RDS container was **removed** on shutdown and **recreated** on start with its data intact, and its proxy target moved onto the VPC network (`10.0.0.3:5432`). Floci also exits with 137 on `compose stop`: the default 10 s stop timeout is shorter than its shutdown work.
 
 ## Emulator platform
 
@@ -118,6 +119,9 @@ All Floci instances share `127.0.0.1` as their public IP, so SSH uses host ports
 
 **22. Unset shell variables expand to nothing.** *(tested)*
 `--targets Id=$INSTANCE_ID` with the variable unset becomes `--targets Id=`, which the API accepts. Use `set -u` in scripts and re-source `shortify-ids.sh` in every new terminal.
+
+**29. Silent auto-start in `.bashrc` started the wrong stack.** *(tested)*
+The line `cd ~/workspace/floci && docker compose up -d > /dev/null 2>&1` pointed at an obsolete standalone Floci directory. Every new terminal tried to start that stack instead of `floci-ui`, and the redirect hid every error. That is also where a second Floci instance came from earlier. The fix is to keep only `eval "$(floci env)"` in `.bashrc` and to start sessions explicitly with a named command (`shortify_up`) that shows its errors. The obsolete stack was deleted.
 
 **27. Don't keep misleading configuration.**
 The enforcement flag is still set but does nothing on this machine. Configuration that claims a control that isn't there creates false confidence. Remove it at the next Floci recreate.

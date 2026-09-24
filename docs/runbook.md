@@ -36,18 +36,20 @@ A few notes on these settings:
 
 - **Why `group_add` and not `chmod 666`:** a `chmod` on the socket is undone every time Docker restarts, and Floci then silently loses Docker access. See edge case #18 in [edge-cases.md](edge-cases.md).
 - **`FLOCI_NETWORK_SECURITY_GROUP_ENFORCEMENT_ENABLED`:** it's still set to `"true"` from the enforcement test, but it has no observable effect on this machine. Remove it at the next Floci recreate (edge case #13).
-- **Only one Floci:** an old standalone `~/workspace/floci/docker-compose.yml` is obsolete. Two emulators running at once split resources between them.
+- **Only one Floci:** there must be exactly one Floci stack. An old standalone `~/workspace/floci` stack was still being started by `.bashrc`, and it had to be deleted (along with its `floci_floci-data` volume).
 
-Point the AWS CLI at Floci permanently:
+Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. Don't auto-start the stack on every shell: a hidden start that silences its errors failed invisibly and started the wrong stack.
 
 ```bash
-echo '(cd ~/workspace/floci-ui && docker compose start > /dev/null 2>&1); eval $(floci env)' >> ~/.bashrc
+cat >> ~/.bashrc << 'RC'
+eval "$(floci env)"
+shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-ids.sh; }
+RC
 source ~/.bashrc
+type shortify_up                            # prints the function
 aws s3 ls                                   # empty output, no error
 curl http://localhost:4566/_floci/health    # every service "running"
 ```
-
-The subshell keeps new terminals from changing directory. `start` resumes existing containers instead of recreating them.
 
 ---
 
@@ -93,10 +95,9 @@ Host shortify-ec2
 ## 3. Start of session
 
 ```bash
-cd ~/workspace/floci-ui && docker compose start
+shortify_up                                                                    # starts the stack and loads the IDs
 docker exec floci-ui-floci-1 id                                               # must list the docker.sock gid
 docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # must print nothing
-source ~/workspace/shortify-ids.sh
 ```
 
 **Baseline.** This must pass before any work or test:
@@ -107,13 +108,15 @@ psql -h localhost -p 7001 -U shortify -d shortify -c "select count(*) from links
 aws elbv2 describe-target-health --target-group-arn $TG_ARN --query 'TargetHealthDescriptions[].[Target.Id,Target.Port,TargetHealth.State]' --output text
 ```
 
-If Floci was stopped, restarted or recreated since the last session, expect the app to be gone. A Floci shutdown stops its instance containers (edge case #26). The signature is `docker ps -a --filter name=floci-ec2` showing `Exited (137)` while the API still says `running`. Go to section 5.
+**Expect the app to be gone at every session start.** Any Floci shutdown, including a normal `docker compose stop`, stops its instance containers (edge case #26). The signature is `docker ps -a --filter name=floci-ec2` showing `Exited (137)`. The API then reports either `terminated` (after a stop/restart) or `running` (after a recreate). Either way, go to section 5. RDS comes back by itself, with its data.
 
 ## End of session
 
 ```bash
 cd ~/workspace/floci-ui && docker compose stop
 ```
+
+**Simulating a machine reboot:** quit Docker Desktop first, then `wsl --shutdown` from PowerShell, then start Docker Desktop and wait for "Engine running". Running `wsl --shutdown` while Docker Desktop is running leaves it hung at "Turning off the Docker Engine" until its processes are killed.
 
 ---
 
