@@ -1,0 +1,15 @@
+# Lint rules for the whole repo, so CI and every machine agree.
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes: undefined names, unused imports, etc.
+  "I",   # import ordering
+  "B",   # bugbear: likely bugs
+]
+
+[lint.flake8-bugbear]
+# FastAPI's dependency injection (Depends) is designed to be used as a default argument.
+extend-immutable-calls = ["fastapi.Depends"]

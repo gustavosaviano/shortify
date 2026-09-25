@@ -1,11 +1,16 @@
-from fastapi import FastAPI, HTTPException, Depends
+import json
+import logging
+import random
+import string
+import time
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, HttpUrl
 from sqlalchemy.orm import Session
-import random, string, logging, json, time
-from datetime import datetime
 
-from .database import get_db, engine
+from .database import engine, get_db
 from .models import Base, Link
 
 logging.basicConfig(level=logging.INFO)

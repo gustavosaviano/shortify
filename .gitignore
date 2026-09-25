@@ -10,3 +10,4 @@ __pycache__/
 *.tfvars
 !*.tfvars.example
 .DS_Store
+.venv/
