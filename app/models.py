@@ -11,3 +11,4 @@ class Link(Base):
     original_url = Column(String(2048), nullable=False)
     clicks = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+import os
