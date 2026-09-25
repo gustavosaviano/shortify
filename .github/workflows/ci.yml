@@ -1,0 +1,87 @@
+# CI: runs on every push to main and every pull request, on GitHub-hosted runners only.
+# Security rules for this repo (public, with a self-hosted deploy runner):
+#   - never use pull_request_target
+#   - CI jobs never run on the self-hosted runner
+#   - third-party actions are pinned to a full commit SHA (the tag is in the comment)
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The job's GITHUB_TOKEN can only read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check app tests
+
+  test:
+    name: Test
+    needs: lint            # fail fast: no database is started if lint fails
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16  # same major version as the RDS instance (dev/prod parity)
+        env:
+          POSTGRES_USER: shortify
+          POSTGRES_PASSWORD: shortify
+          POSTGRES_DB: shortify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shortify"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://shortify:shortify@localhost:5432/shortify
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q -p no:cacheprovider
