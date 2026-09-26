@@ -149,7 +149,7 @@ WSL on Ubuntu 26.04 ships Python 3.14; the project targets 3.12 everywhere else 
 GitHub's notice: `ubuntu-latest` migrates to Ubuntu 26 from 2026-10-19. Pinning `runs-on: ubuntu-24.04` (matching EC2) makes an OS change a deliberate commit. Not done yet.
 
 **33. CI reports, a ruleset enforces.** *(tested)*
-A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active. The `protect-main` ruleset (PR required, `Lint` and `Test` required checks, no force pushes, no bypass) blocked it. Both checks are required because a skipped job is believed to count as passing for required checks (not verified in isolation).
+A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active. The `protect-main` ruleset (PR required, `Lint` and `Test` required checks, no force pushes, no bypass) blocked it. Both checks are required because a skipped job is believed to count as passing for required checks (not verified in isolation). **Verify it on a PR:** both checks must show a `Required` badge. On 2026-09-26 only `Lint` did, so a PR with failing tests could have been merged.
 
 ## Terraform (Phase 4)
 
