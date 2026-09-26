@@ -145,11 +145,14 @@ WSL on Ubuntu 26.04 ships Python 3.14; the project targets 3.12 everywhere else 
 **31. Docker credential helper broken after a WSL integration crash.** *(tested)*
 `docker run` of an image not yet pulled failed with `error getting credentials`. Docker's config pointed at the Windows helper (`credsStore`), which stopped working. Fix: restart Docker Desktop cleanly; if that isn't enough, back up `~/.docker/config.json` and remove `credsStore` (public images need no credentials).
 
+**39. The repo lives on a Windows drive, and the shell's directory can vanish.** *(observed)*
+`~/workspace` is a symlink to `/mnt/e/Workspace`, a Windows drive mounted into WSL through 9p (drvfs): every file shows `rwxrwxrwx` and directories are 512 bytes. After `docker run -v "$PWD":/src …` and `docker compose down`, every git command failed with `Unable to read current working directory`, while `ls` still worked. `findmnt -T .` then listed `/mnt/e` mounted twice: a second mount over the first hides the directory the shell was in, so its path can't be resolved. `cd` into the path again fixes it; nothing is lost. What creates the second mount is unverified (suspect: Docker Desktop bind-mounting a `/mnt/e` path).
+
 **32. `ubuntu-latest` is a moving label.** *(open)*
 GitHub's notice: `ubuntu-latest` migrates to Ubuntu 26 from 2026-10-19. Pinning `runs-on: ubuntu-24.04` (matching EC2) makes an OS change a deliberate commit. Not done yet.
 
 **33. CI reports, a ruleset enforces.** *(tested)*
-A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active. The `protect-main` ruleset (PR required, `Lint` and `Test` required checks, no force pushes, no bypass) blocked it. Both checks are required because a skipped job is believed to count as passing for required checks (not verified in isolation).
+A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active until the `protect-main` ruleset existed (PR required, no force pushes, no bypass). The ruleset first required only `Lint`: `Test` had never been added, so a PR with failing tests could have been merged. Spotted on 2026-09-26 because only `Lint` showed a `Required` badge, confirmed with `gh api repos/gustavosaviano/shortify/rules/branches/main`, then fixed. Effect verified with PR #4: a deliberately failing, lint-clean test left `Test` red and `Required`, and the merge button disabled with no bypass option. Check the effective rules through the API, not the PR page. `Lint` stays required too because a skipped job is believed to count as passing (not verified in isolation).
 
 ## Terraform (Phase 4)
 
