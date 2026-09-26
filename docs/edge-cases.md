@@ -137,6 +137,38 @@ The stack's init hook (`init/ready.d/01-setup.sh`) calls the AWS CLI, which only
 **16. AWS CLI pager.**
 Long output opens in `less`. Use `--no-cli-pager` or `export AWS_PAGER=""`.
 
+## CI (Phase 3a)
+
+**30. The laptop's Python differs from the project's.** *(tested)*
+WSL on Ubuntu 26.04 ships Python 3.14; the project targets 3.12 everywhere else (Dockerfile, EC2, `ruff.toml`, CI). `psycopg2-binary==2.9.9` has no wheel for 3.14, so pip tries to compile it and fails on missing `pg_config`. Don't adapt the dependencies to the laptop: run the tests in a `python:3.12-slim` container on the Phase 1 database network (runbook section 8).
+
+**31. Docker credential helper broken after a WSL integration crash.** *(tested)*
+`docker run` of an image not yet pulled failed with `error getting credentials`. Docker's config pointed at the Windows helper (`credsStore`), which stopped working. Fix: restart Docker Desktop cleanly; if that isn't enough, back up `~/.docker/config.json` and remove `credsStore` (public images need no credentials).
+
+**32. `ubuntu-latest` is a moving label.** *(open)*
+GitHub's notice: `ubuntu-latest` migrates to Ubuntu 26 from 2026-10-19. Pinning `runs-on: ubuntu-24.04` (matching EC2) makes an OS change a deliberate commit. Not done yet.
+
+**33. CI reports, a ruleset enforces.** *(tested)*
+A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active. The `protect-main` ruleset (PR required, `Lint` and `Test` required checks, no force pushes, no bypass) blocked it. Both checks are required because a skipped job is believed to count as passing for required checks (not verified in isolation).
+
+## Terraform (Phase 4)
+
+**34. Floci ignores the provider's removal of the default egress rule.** *(tested)*
+Terraform documents that it removes AWS's default allow-all egress rule from groups it creates. The debug log (`TF_LOG=DEBUG`) shows the provider sending `RevokeSecurityGroupEgress` with `IpProtocol=-1, FromPort=0, ToPort=0`; Floci answers `true` and removes nothing, because it matches on ports and its default rule has none (AWS ignores ports for protocol `-1`). The same revoke without ports works. Workaround: `terraform_data.revoke_default_egress` in `security.tf`, which is off by default (`emulator_revoke_default_egress`), re-runs whenever a group is recreated, and fails the apply if the rule is still there. Tested by recreating a group with `-replace`. To report upstream.
+
+**35. Standalone rules make unmanaged rules invisible.** *(tested)*
+With `aws_vpc_security_group_*_rule` resources, `terraform plan` showed `No changes` while an extra allow-all rule existed. Refresh only reads what is in the state; nobody owns "the complete rule set". Inline rules would flag it, but create dependency cycles between groups that reference each other. Mitigation belongs to Phase 6 (AWS Config / audit).
+
+**36. Floci ignores security group rule modifications.** *(tested)*
+After replacing the database group, `app_to_db` reported `Modifications complete` twice, yet every plan still showed `referenced_security_group_id` pointing at the original, deleted group. Confirmed at the API level: `aws ec2 modify-security-group-rules` with a new `ReferencedGroupId` returns `true` and `describe-security-group-rules` still shows the old group. In Floci's data the app → database rule pointed at a group that no longer existed; on AWS that would cut the app off from its database.
+Fix: every rule that references another group has `lifecycle { replace_triggered_by = [<that group>.id] }`, so replacing a group recreates the rules pointing at it instead of modifying them. Creating rules works on Floci, and the pattern is valid on AWS (a rule is briefly absent during a group replacement, which is disruptive anyway). The existing broken rule needed one `-replace`. Rebuild test: replacing the database group planned `4 to add, 0 to change, 4 to destroy` (`app_to_db will be replaced due to changes in replace_triggered_by`), and the following plan was `No changes`. To report upstream together with #34.
+
+**38. Never press Ctrl+C twice on Terraform.** *(observed)*
+One interrupt lets Terraform finish its current step and exit cleanly; a second one exits immediately and can leave the state half-written ("data loss may have occurred"). A pasted line accidentally started an apply that was interrupted twice; it had only loaded the provider, so nothing changed. Proof: the next `terraform apply tfplan` succeeded, and Terraform refuses to apply a saved plan whose state changed since it was made.
+
+**37. The admin IP leaks into plans, state and debug logs.**
+`terraform.tfvars` (git-ignored) keeps it out of the code, but `terraform plan` output, `terraform.tfstate`, `tfplan` and `tf-debug.log` all contain it. None of them is ever committed; watch CI logs once Terraform runs in the pipeline.
+
 ---
 
 ## Floci vs real AWS
@@ -153,6 +185,8 @@ Long output opens in `less`. Use `--no-cli-pager` or `export AWS_PAGER=""`.
 | ALB → instance | Floci must be on the VPC Docker network | Native VPC routing |
 | ALB DNS name | Resolves to `::1` | Several public IPs that change |
 | Container IPs from the host | Not reachable (Docker Desktop) | N/A |
+| Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
+| Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
 | Provisioning time | Seconds | Minutes |
 
 ## Production notes

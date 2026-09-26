@@ -11,3 +11,5 @@ __pycache__/
 !*.tfvars.example
 .DS_Store
 .venv/
+tfplan
+tf-debug.log

@@ -51,6 +51,9 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Security groups referencing security groups | Rules express intent ("only the ALB may call the app") instead of IP lists that go stale |
 | Manual build before Terraform | Every line of IaC maps to a resource already built by hand and understood |
 | Local emulation (Floci) | Zero cloud cost while learning; gaps versus AWS are measured, not guessed |
+| Immutable deploys (replace instances every release) | No drift and no in-place port conflicts; the new version is healthy before the old one leaves, so campaign links never go down |
+| Terraform before the deploy pipeline | The pipeline reads resource IDs from Terraform outputs instead of hardcoding hand-made IDs |
+| Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; fork pull requests need approval and can never reach the self-hosted deploy runner |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 
@@ -62,8 +65,9 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 |---|---|---|
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
-| 3 | CI/CD: GitHub Actions, ECR, automated deploy | ⏳ Next |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | ⏳ |
+| 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network and security groups done |
+| 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
 
@@ -122,10 +126,13 @@ Full test table, hypotheses and corrections: **[docs/lessons-learned.md](docs/le
 
 ```
 shortify/
+├── .github/workflows/    # CI: lint → test (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
+├── tests/                # pytest suite, runs against real PostgreSQL
+├── infra/terraform/      # Phase 4: network and security groups as code
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)
-├── requirements.txt
+├── requirements.txt      # runtime dependencies (requirements-dev.txt: test and lint tools)
 └── docs/
     ├── runbook.md        # Operating the Floci environment, rebuild script
     ├── edge-cases.md     # Gotchas, Floci vs AWS differences, production notes

@@ -76,6 +76,26 @@ A record of hypotheses that turned out wrong, how each was tested, and what was 
 | **Finding** | (2): the line started an obsolete stack in another directory, with all output sent to `/dev/null`. The same line explained a mysterious second Floci instance earlier |
 | **Takeaway** | Don't silence errors in automation, and prefer an explicit start step over a hidden side effect |
 
+## The false-success pattern
+
+The same failure mode showed up in different places: a call reports success and nothing changed.
+
+| Where | Symptom | How it was caught |
+|---|---|---|
+| Design of the deploy (Phase 3) | A new app version fails to bind port 8000 in the background, the old one keeps answering `/health`, the deploy "succeeds" | Reasoned out before building: verify the *new* version via `/version`, not just any answer |
+| Floci revoke (Phase 4) | `RevokeSecurityGroupEgress` returns `true`; the default rule stays | Checked the actual rules with `describe-security-groups`, then the request in the Terraform debug log |
+| Floci rule modification (Phase 4) | `Modifications complete`, yet the next plan shows the old value; the rule points at a deleted group | Reading the plan after apply instead of trusting the apply, then repeating the call with the CLI to rule out the provider |
+
+**Takeaway:** verify the effect, not the return code.
+
+## CI gate (Phase 3a)
+
+| Hypothesis | Test | Finding |
+|---|---|---|
+| A red CI run blocks merging | Opened a PR with a deliberate lint error | CI turned red and skipped the tests, but the merge button stayed active; a ruleset was needed |
+| SQLite would be fine for tests | Reasoned | Different dialect and behaviour: tests could pass while PostgreSQL fails. Tests run on real PostgreSQL 16 |
+| The tests catch real bugs | Broke click counting on purpose | Exactly the right test failed (`assert 0 == 3`) |
+
 ## Smaller corrections
 
 | Initial claim | What's actually true |
@@ -94,6 +114,9 @@ A record of hypotheses that turned out wrong, how each was tested, and what was 
 | An ALB DNS name resolves to `127.0.0.1` | It resolves to `::1` |
 | `ss` showing nothing inside Floci was a mystery | `ss` isn't installed in the image |
 | Ignoring `.terraform.lock.hcl` in git | The lock file must be committed |
+| Terraform removes the default egress rule, so it would be gone on Floci too | Terraform tries; Floci ignores the request (edge case #34) |
+| Replacing a group replaces every rule that references it | Rules *on* the group are replaced; rules that only *point at* it are updated in place |
+| `terraform plan` would flag an extra security group rule | Not with standalone rule resources (edge case #35) |
 
 ---
 
@@ -135,3 +158,5 @@ The end-of-phase test round, run on a healthy baseline:
 10. Could `dockerd` run inside a Floci instance?
 11. An HTTPS listener and 80 → 443 redirect with a Floci ACM certificate.
 12. Current AWS free-tier and pricing figures (not verified here).
+14. Report both Floci bugs (edge cases #34 and #36) with the evidence.
+15. Pin CI runners to `ubuntu-24.04` before 2026-10-19 (edge case #32).

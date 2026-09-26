@@ -285,3 +285,59 @@ Rules of thumb that apply to every step:
 
 - **Check for unset variables.** An unset `$INSTANCE_ID` silently turns into `--targets Id=`, and the API accepts it.
 - **Never use `--dry-run` on Floci.** It creates the resource anyway.
+
+---
+
+## 8. Running the tests locally
+
+The project targets Python 3.12; the laptop may have another version. Run exactly what CI runs, in a container:
+
+```bash
+cd ~/workspace/shortify-phase1/shortify
+docker compose up -d db
+docker run --rm --network shortify_default \
+  -e DATABASE_URL=postgresql://shortify:shortify@db:5432/shortify \
+  -v "$PWD":/src -w /src python:3.12-slim \
+  sh -c "pip install -q -r requirements-dev.txt && ruff check app tests && pytest -q -p no:cacheprovider"
+docker compose down
+```
+
+Every change to `main` goes branch → pull request → green `Lint` and `Test` → merge (enforced by the `protect-main` ruleset).
+
+## 9. Terraform workflow
+
+```bash
+cd ~/workspace/shortify-phase1/shortify/infra/terraform
+cat terraform.tfvars          # git-ignored; must contain:
+#   admin_cidr                     = "<your public IP>/32"
+#   emulator_revoke_default_egress = true      # Floci only (edge case #34)
+
+terraform fmt -check && terraform validate
+terraform plan -out tfplan    # read it; look for "forces replacement"
+terraform apply tfplan        # applies exactly the reviewed plan
+terraform output
+```
+
+- The provider reads `AWS_ENDPOINT_URL` and the test credentials from the shell: the code has no Floci settings.
+- Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
+- Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
+- Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
+- Debug the API calls: `TF_LOG=DEBUG TF_LOG_PATH=tf-debug.log terraform apply tfplan` (delete the log afterwards).
+- Check that no default allow-all egress rule survived:
+  ```bash
+  for sg in alb app db; do SG=$(terraform output -json security_group_ids | python3 -c "import json,sys; print(json.load(sys.stdin)['$sg'])")
+    echo "== $sg"; aws ec2 describe-security-groups --group-ids $SG --query 'SecurityGroups[0].IpPermissionsEgress[].[IpProtocol,FromPort,ToPort]' --output text; done
+  ```
+
+## 10. Resetting Floci to an empty account
+
+Used once before Phase 4 so Terraform builds everything from nothing:
+
+```bash
+cd ~/workspace/floci-ui && docker compose stop
+docker ps -aq --filter name=floci-ec2 --filter name=floci-rds | xargs -r docker rm -f
+docker network ls --format '{{.Name}}' | grep '^floci-vpc-' | xargs -r docker network rm
+sudo find data -mindepth 1 -delete          # empty the state, keep the folder and its permissions
+docker compose up -d
+aws ec2 describe-vpcs --query 'Vpcs[].[VpcId,IsDefault]' --output text   # only the default VPC
+```
