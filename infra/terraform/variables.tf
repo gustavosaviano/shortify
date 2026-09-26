@@ -24,3 +24,20 @@ variable "subnets" {
     "private-02" = { cidr = "10.0.4.0/24", az = "us-east-1b", public = false }
   }
 }
+
+variable "app_port" {
+  description = "Port the app listens on inside the instances."
+  type        = number
+  default     = 8000
+}
+
+variable "admin_cidr" {
+  description = "CIDR allowed to SSH to the instances, e.g. \"203.0.113.10/32\". Set it in terraform.tfvars (git-ignored), never in code: the repo is public."
+  type        = string
+}
+
+variable "emulator_revoke_default_egress" {
+  description = "Floci-only workaround: remove the default allow-all egress rule that Floci fails to remove (it matches revoke requests on ports; AWS ignores ports for protocol -1). Keep false on real AWS."
+  type        = bool
+  default     = false
+}

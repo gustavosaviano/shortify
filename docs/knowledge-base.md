@@ -15,6 +15,8 @@ Networking and AWS concepts that came up while building Phases 1–2, in questio
 - [Application Load Balancer](#application-load-balancer)
 - [AWS CLI](#aws-cli)
 - [Docker and local setup](#docker-and-local-setup)
+- [CI and GitHub Actions](#ci-and-github-actions)
+- [Terraform](#terraform)
 
 ---
 
@@ -283,3 +285,71 @@ Docker sets `net.ipv4.ip_unprivileged_port_start=0` inside containers. On a norm
 
 **`curl` exit codes worth knowing?**
 `6` means the host name couldn't be resolved, `7` means the connection was refused or there's no route to the host, and `28` means timeout.
+
+---
+
+## CI and GitHub Actions
+
+**Where do GitHub Actions jobs run?**
+GitHub reads the workflow and schedules jobs; each job runs on a *runner*. GitHub-hosted runners are fresh VMs in GitHub's cloud; a self-hosted runner is an agent on your own machine that polls GitHub for jobs (outbound only). One workflow can mix both.
+
+**Why not run CI on the laptop too?**
+CI proves the code works on a clean machine, not just yours. A fresh VM has none of your caches, packages or environment variables.
+
+**Why lint before tests?**
+Fail fast, fail cheap: lint takes seconds and needs no database.
+
+**Why real PostgreSQL in tests instead of SQLite?**
+Dev/prod parity. Different SQL dialects, types and constraint behaviour mean tests could pass on SQLite and fail in production. CI uses a `postgres:16` service container, the same major version as RDS.
+
+**Why pin actions to a commit SHA?**
+A tag can be moved to different code; a SHA can't.
+
+**Why is a public repo with a self-hosted runner risky, and how is it contained?**
+A fork's pull request runs its own copy of the workflow, so it could target the self-hosted runner. Containment: approval required for all external contributors' workflows, never use `pull_request_target`, deploy only on `push` to `main`, and CI jobs only on GitHub-hosted runners.
+
+**Should the version be recorded at build time or deploy time?**
+Build time: the artifact is labelled when it's made, from the same commit, and can't drift from its contents. A deploy-time value travels separately and can be wrong.
+
+**Mutable or immutable deploys?**
+Mutable updates instances in place (fast, but drift and port conflicts). Immutable replaces instances every release (no drift, easy rollback, zero downtime via blue/green). Containers (ECS/Kubernetes) are immutable by nature.
+
+---
+
+## Terraform
+
+**How does Terraform know what already exists?**
+The state file maps each address in the code (e.g. `aws_vpc.main`) to a real resource ID. Every plan reads the state, refreshes each resource from the API, and diffs the code against what's really there.
+
+**Why doesn't running the same code twice create two VPCs?**
+Idempotence: Terraform only acts on differences between code, state and reality.
+
+**How do I get two identical VPCs?**
+Give them two addresses: two blocks, `for_each`/`count`, or a module called twice. Identity is the address, not the configuration.
+
+**Why did fixing a drifted tag change only the tag?**
+The diff is per attribute. The provider also knows which attributes update in place and which force replacement; look for `# forces replacement` in every plan.
+
+**Why doesn't Terraform detect a security group rule nobody declared?**
+Refresh only reads what's in the state. With standalone rule resources, no resource owns the complete set of rules.
+
+**How does Terraform decide the order?**
+From references. `vpc_id = aws_vpc.main.id` means the subnet needs the VPC's ID as input, so the VPC comes first. Terraform builds a graph (`terraform graph`), creates independent resources in parallel, and destroys in reverse. Dependencies are per resource block, so something depending on `aws_subnet.this` waits for all its instances.
+
+**What are `for_each`, `each.key` and `each.value`?**
+`for_each` creates one instance per map entry; `each.key` is the entry's name, `each.value` its settings. A map with names keeps identities stable; a list would renumber everything when an item is removed.
+
+**What are `locals`?**
+Named values computed inside the code, defined in a `locals` block and referenced as `local.<name>`.
+
+**What is a for expression like `[for k, s in aws_subnet.this : s.id if var.subnets[k].public]`?**
+A filter: loop over the subnets, keep the ID when the entry is public. Like `SELECT id FROM subnets WHERE public`.
+
+**Why `plan -out tfplan` then `apply tfplan`?**
+A bare `apply` computes a new plan; something may have changed since you reviewed the last one. Applying the saved file applies exactly what was reviewed.
+
+**What does `-replace=<address>` do?**
+Plans a destroy-and-recreate of that resource even though its code didn't change.
+
+**Where do secrets and personal values go?**
+In `terraform.tfvars` (git-ignored), not in code. They still appear in plans, state and debug logs, so none of those are committed.

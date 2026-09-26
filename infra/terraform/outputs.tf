@@ -12,3 +12,12 @@ output "private_subnet_ids" {
   description = "Private subnets (RDS)."
   value       = local.private_subnet_ids
 }
+
+output "security_group_ids" {
+  description = "Security groups by tier."
+  value = {
+    alb = aws_security_group.alb.id
+    app = aws_security_group.app.id
+    db  = aws_security_group.db.id
+  }
+}
