@@ -152,7 +152,10 @@ WSL on Ubuntu 26.04 ships Python 3.14; the project targets 3.12 everywhere else 
 GitHub's notice: `ubuntu-latest` migrates to Ubuntu 26 from 2026-10-19. Pinning `runs-on: ubuntu-24.04` (matching EC2) makes an OS change a deliberate commit. Not done yet.
 
 **33. CI reports, a ruleset enforces.** *(tested)*
-A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active until the `protect-main` ruleset existed (PR required, no force pushes, no bypass). The ruleset first required only `Lint`: `Test` had never been added, so a PR with failing tests could have been merged. Spotted on 2026-09-26 because only `Lint` showed a `Required` badge, confirmed with `gh api repos/gustavosaviano/shortify/rules/branches/main`, then fixed. Effect verified with PR #4: a deliberately failing, lint-clean test left `Test` red and `Required`, and the merge button disabled with no bypass option. Check the effective rules through the API, not the PR page. `Lint` stays required too because a skipped job is believed to count as passing (not verified in isolation).
+A deliberately broken PR turned red (Lint failed, Test skipped) but the merge button stayed active until the `protect-main` ruleset existed (PR required, no force pushes, no bypass). The ruleset first required only `Lint`: `Test` had never been added, so a PR with failing tests could have been merged. Spotted on 2026-09-26 because only `Lint` showed a `Required` badge, confirmed with `gh api repos/gustavosaviano/shortify/rules/branches/main`, then fixed. Effect verified with PR #4: a deliberately failing, lint-clean test left `Test` red and `Required`, and the merge button disabled with no bypass option. Check the effective rules through the API, not the PR page. `Lint` stays required too: GitHub documents that jobs skipped because a job they depend on failed don't report a failure, so requiring only `Test` wouldn't block a lint failure. The ruleset now requires `Lint`, `Test` and `Terraform` (checked on 2026-09-26 via the API).
+
+**40. A required check skipped by a `paths:` filter blocks the PR forever.** *(documented)*
+GitHub's docs: if a workflow is skipped by path, branch or commit-message filtering, its checks stay `Pending` and a PR that requires them can't merge ("Waiting for status to be reported"). A job skipped by an `if:` condition instead reports `Success`, so a wrong "did `.tf` files change?" guess would pass a required check without running it. Decision: the `Terraform` job (`fmt -check`, `init -backend=false -lockfile=readonly`, `validate`) runs on every PR; it takes about 15 s. Effect tested on PR #5: a deliberately misaligned `=` in `variables.tf` turned `Terraform` red at the `fmt` step (exit 3) while `Lint` and `Test` stayed green; restoring it with `terraform fmt` turned it green.
 
 ## Terraform (Phase 4)
 
@@ -170,7 +173,7 @@ Fix: every rule that references another group has `lifecycle { replace_triggered
 One interrupt lets Terraform finish its current step and exit cleanly; a second one exits immediately and can leave the state half-written ("data loss may have occurred"). A pasted line accidentally started an apply that was interrupted twice; it had only loaded the provider, so nothing changed. Proof: the next `terraform apply tfplan` succeeded, and Terraform refuses to apply a saved plan whose state changed since it was made.
 
 **37. The admin IP leaks into plans, state and debug logs.**
-`terraform.tfvars` (git-ignored) keeps it out of the code, but `terraform plan` output, `terraform.tfstate`, `tfplan` and `tf-debug.log` all contain it. None of them is ever committed; watch CI logs once Terraform runs in the pipeline.
+`terraform.tfvars` (git-ignored) keeps it out of the code, but `terraform plan` output, `terraform.tfstate`, `tfplan` and `tf-debug.log` all contain it. None of them is ever committed; watch CI logs once Terraform runs in the pipeline. Locally, `terraform fmt -check -recursive -diff` also checks the git-ignored `terraform.tfvars` and prints its contents, IP included, when it isn't formatted: don't paste that output anywhere public. CI never sees the file.
 
 ---
 

@@ -302,7 +302,7 @@ docker run --rm --network shortify_default \
 docker compose down
 ```
 
-Every change to `main` goes branch → pull request → green `Lint` and `Test` → merge (enforced by the `protect-main` ruleset).
+Every change to `main` goes branch → pull request → green `Lint`, `Test` and `Terraform` → merge (enforced by the `protect-main` ruleset).
 
 ## 9. Terraform workflow
 
@@ -318,6 +318,7 @@ terraform apply tfplan        # applies exactly the reviewed plan
 terraform output
 ```
 
+- CI runs `terraform fmt -check -recursive -diff`, `terraform init -backend=false -lockfile=readonly` and `terraform validate` on every PR (required check `Terraform`). Run the same locally before pushing; locally, `fmt -check` also covers `terraform.tfvars`, which CI never sees.
 - The provider reads `AWS_ENDPOINT_URL` and the test credentials from the shell: the code has no Floci settings.
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
