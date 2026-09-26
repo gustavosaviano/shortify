@@ -189,6 +189,15 @@ The instance *endpoint*: a DNS name on AWS, returned by `describe-db-instances` 
 **What should change for production?**
 Encryption at rest, deletion protection, Multi-AZ, credentials in Secrets Manager, and optionally IAM database authentication.
 
+**Where does the database password come from?**
+RDS generates it and keeps it in Secrets Manager (`manage_master_user_password`). Terraform never sees it, so it's not in code, `terraform.tfvars`, plans or state. The alternatives were a write-only `password_wo` fed by a generated password (still needs somewhere to store it) or a password from an environment variable (it lives in your shell).
+
+**How do I log in manually?**
+Read the secret's ARN from `describe-db-instances` (`MasterUserSecret.SecretArn`), read the password with `secretsmanager get-secret-value`, and pass it as `PGPASSWORD=… psql …` for that one command. Never save it: it can be rotated, and reading the secret is the access check.
+
+**What is an ARN?**
+An Amazon Resource Name, the unique ID of any AWS resource: `arn:partition:service:region:account:resource`. IAM policies use ARNs to say which resources an identity may use, e.g. "may read this secret". Floci's account ID is `000000000000`.
+
 ---
 
 ## EC2 and SSH

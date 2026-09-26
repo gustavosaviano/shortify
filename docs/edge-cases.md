@@ -129,6 +129,12 @@ The enforcement flag is still set but does nothing on this machine. Configuratio
 **28. `latest-compat` is required for the floci-ui stack.** *(tested)*
 The stack's init hook (`init/ready.d/01-setup.sh`) calls the AWS CLI, which only the compat image contains. That's the best explanation for "Runtime unavailable" with `latest`. The TLS-permission warning that appears in the logs is non-fatal and shows up with both images. The image also has no `ss` or `netstat`, only `curl`.
 
+**41. RDS-managed master passwords work, and passwords are enforced.** *(tested)*
+`create-db-instance --manage-master-user-password` created a Secrets Manager secret (`rds!db-…`, 38-character password) and reported `MasterUserSecret.SecretStatus: active`. The password from the secret logged in with `psql` through Floci's proxy, and a wrong password was rejected (`password authentication failed`), so a successful login is real evidence. The create call returned `available` immediately; on AWS it says `creating` for minutes, so always use `aws rds wait db-instance-available`. Decision: the database uses `manage_master_user_password` in Terraform. Code, plans and state never see the password. Read it fresh from the secret for manual access, never save it: RDS rotates it, and on AWS reading the secret is the IAM access check.
+
+**42. Deleting the instance orphans its managed secret.** *(tested)*
+After `delete-db-instance` and the `db-instance-deleted` waiter, `describe-secret` still returned the secret with no `DeletedDate`. As far as known, AWS removes the RDS-managed secret together with the instance (not verified here). Cleanup: `aws secretsmanager delete-secret --secret-id <arn> --force-delete-without-recovery`, then confirm `describe-secret` returns `ResourceNotFoundException`. After any database destroy or replacement on Floci, check for leftovers: `aws secretsmanager list-secrets --query "SecretList[?starts_with(Name,'rds!')].Name"`.
+
 ## Application
 
 **15. `short_url` is wrong behind the ALB.**
@@ -194,6 +200,8 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 | Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
 | Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
 | Provisioning time | Seconds | Minutes |
+| RDS create status | `available` immediately | `creating` for minutes |
+| RDS-managed secret on instance delete | Left behind (orphaned) | Deleted with the instance (not verified here) |
 
 ## Production notes
 
