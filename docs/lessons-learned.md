@@ -95,6 +95,8 @@ The same failure mode showed up in different places: a call reports success and 
 | A red CI run blocks merging | Opened a PR with a deliberate lint error | CI turned red and skipped the tests, but the merge button stayed active; a ruleset was needed |
 | SQLite would be fine for tests | Reasoned | Different dialect and behaviour: tests could pass while PostgreSQL fails. Tests run on real PostgreSQL 16 |
 | The tests catch real bugs | Broke click counting on purpose | Exactly the right test failed (`assert 0 == 3`) |
+| The ruleset required both `Lint` and `Test` | The PR page showed `Required` only on `Lint`; checked the rules API | `Test` had never been added. After adding it, PR #4 with a deliberate lint-clean failure was blocked; removing the failure made it mergeable |
+| A new Terraform job proves itself by being green | Misaligned one `=` in `variables.tf` on PR #5 | `Terraform` turned red at `fmt` (exit 3). A job pointed at the wrong folder would have stayed green |
 
 ## Smaller corrections
 

@@ -126,7 +126,7 @@ Full test table, hypotheses and corrections: **[docs/lessons-learned.md](docs/le
 
 ```
 shortify/
-├── .github/workflows/    # CI: lint → test (GitHub-hosted runners)
+├── .github/workflows/    # CI: lint → test, plus terraform fmt/validate (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite, runs against real PostgreSQL
 ├── infra/terraform/      # Phase 4: network and security groups as code

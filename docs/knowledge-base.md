@@ -314,6 +314,15 @@ Build time: the artifact is labelled when it's made, from the same commit, and c
 **Mutable or immutable deploys?**
 Mutable updates instances in place (fast, but drift and port conflicts). Immutable replaces instances every release (no drift, easy rollback, zero downtime via blue/green). Containers (ECS/Kubernetes) are immutable by nature.
 
+**Why did `Lint` and `Test` still run when `Terraform` failed?**
+Jobs in a workflow run in parallel unless one declares `needs:`. Only `Test` needs `Lint` (it starts a database, so a lint failure skips it). `Terraform` checks unrelated code, so it runs independently and one push shows every problem at once.
+
+**Why does the Terraform check run on every PR, not only when `.tf` files change?**
+A required check whose workflow is skipped by a `paths:` filter stays pending forever, and a job skipped by `if:` reports success. Path-awareness would save about 15 seconds and add a way for a required check to pass without running (edge case #40).
+
+**Why does CI take about a minute when the tests take 0.4 s?**
+Setup dominates: a fresh VM, the `postgres:16` service and its health check, Python and dependencies, plus `Test` waiting for `Lint`. Measured and accepted for now; running `Test` in parallel with `Lint` is the first lever if it ever matters.
+
 ---
 
 ## Terraform
