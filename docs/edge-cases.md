@@ -159,8 +159,12 @@ Terraform documents that it removes AWS's default allow-all egress rule from gro
 **35. Standalone rules make unmanaged rules invisible.** *(tested)*
 With `aws_vpc_security_group_*_rule` resources, `terraform plan` showed `No changes` while an extra allow-all rule existed. Refresh only reads what is in the state; nobody owns "the complete rule set". Inline rules would flag it, but create dependency cycles between groups that reference each other. Mitigation belongs to Phase 6 (AWS Config / audit).
 
-**36. Floci may ignore rule modifications.** *(suspected, being verified)*
-After replacing the database group, `app_to_db` reported `Modifications complete` twice, yet every plan still shows `referenced_security_group_id` pointing at the original, deleted group. Candidate fix: `lifecycle { replace_triggered_by = [aws_security_group.db.id] }`, so the rule is recreated instead of modified.
+**36. Floci ignores security group rule modifications.** *(tested)*
+After replacing the database group, `app_to_db` reported `Modifications complete` twice, yet every plan still showed `referenced_security_group_id` pointing at the original, deleted group. Confirmed at the API level: `aws ec2 modify-security-group-rules` with a new `ReferencedGroupId` returns `true` and `describe-security-group-rules` still shows the old group. In Floci's data the app → database rule pointed at a group that no longer existed; on AWS that would cut the app off from its database.
+Fix: every rule that references another group has `lifecycle { replace_triggered_by = [<that group>.id] }`, so replacing a group recreates the rules pointing at it instead of modifying them. Creating rules works on Floci, and the pattern is valid on AWS (a rule is briefly absent during a group replacement, which is disruptive anyway). The existing broken rule needed one `-replace`. Rebuild test: replacing the database group planned `4 to add, 0 to change, 4 to destroy` (`app_to_db will be replaced due to changes in replace_triggered_by`), and the following plan was `No changes`. To report upstream together with #34.
+
+**38. Never press Ctrl+C twice on Terraform.** *(observed)*
+One interrupt lets Terraform finish its current step and exit cleanly; a second one exits immediately and can leave the state half-written ("data loss may have occurred"). A pasted line accidentally started an apply that was interrupted twice; it had only loaded the provider, so nothing changed. Proof: the next `terraform apply tfplan` succeeded, and Terraform refuses to apply a saved plan whose state changed since it was made.
 
 **37. The admin IP leaks into plans, state and debug logs.**
 `terraform.tfvars` (git-ignored) keeps it out of the code, but `terraform plan` output, `terraform.tfstate`, `tfplan` and `tf-debug.log` all contain it. None of them is ever committed; watch CI logs once Terraform runs in the pipeline.
@@ -182,7 +186,7 @@ After replacing the database group, `app_to_db` reported `Modifications complete
 | ALB DNS name | Resolves to `::1` | Several public IPs that change |
 | Container IPs from the host | Not reachable (Docker Desktop) | N/A |
 | Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
-| Security group rule modification | Appears to be ignored (being verified) | Applied |
+| Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
 | Provisioning time | Seconds | Minutes |
 
 ## Production notes

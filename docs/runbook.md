@@ -321,6 +321,7 @@ terraform output
 - The provider reads `AWS_ENDPOINT_URL` and the test credentials from the shell: the code has no Floci settings.
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
+- Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
 - Debug the API calls: `TF_LOG=DEBUG TF_LOG_PATH=tf-debug.log terraform apply tfplan` (delete the log afterwards).
 - Check that no default allow-all egress rule survived:
   ```bash

@@ -84,7 +84,7 @@ The same failure mode showed up in different places: a call reports success and 
 |---|---|---|
 | Design of the deploy (Phase 3) | A new app version fails to bind port 8000 in the background, the old one keeps answering `/health`, the deploy "succeeds" | Reasoned out before building: verify the *new* version via `/version`, not just any answer |
 | Floci revoke (Phase 4) | `RevokeSecurityGroupEgress` returns `true`; the default rule stays | Checked the actual rules with `describe-security-groups`, then the request in the Terraform debug log |
-| Floci rule modification (Phase 4, being verified) | `Modifications complete`, yet the next plan shows the old value | Reading the plan after apply instead of trusting the apply |
+| Floci rule modification (Phase 4) | `Modifications complete`, yet the next plan shows the old value; the rule points at a deleted group | Reading the plan after apply instead of trusting the apply, then repeating the call with the CLI to rule out the provider |
 
 **Takeaway:** verify the effect, not the return code.
 
@@ -158,6 +158,5 @@ The end-of-phase test round, run on a healthy baseline:
 10. Could `dockerd` run inside a Floci instance?
 11. An HTTPS listener and 80 → 443 redirect with a Floci ACM certificate.
 12. Current AWS free-tier and pricing figures (not verified here).
-13. Does Floci ignore `ModifySecurityGroupRules` (edge case #36)? Does `replace_triggered_by` give a clean plan?
-14. Report the revoke bug (edge case #34) to Floci with the debug-log evidence.
+14. Report both Floci bugs (edge cases #34 and #36) with the evidence.
 15. Pin CI runners to `ubuntu-24.04` before 2026-10-19 (edge case #32).

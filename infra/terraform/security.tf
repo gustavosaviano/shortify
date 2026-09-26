@@ -52,6 +52,12 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_app" {
   from_port                    = var.app_port
   to_port                      = var.app_port
   referenced_security_group_id = aws_security_group.app.id
+
+  # Recreate instead of modify when the referenced group is replaced: Floci ignores
+  # ModifySecurityGroupRules (docs/edge-cases.md #36). Also valid on AWS.
+  lifecycle {
+    replace_triggered_by = [aws_security_group.app.id]
+  }
 }
 
 # ── App instances ─────────────────────────────────────────────────────────────
@@ -62,6 +68,12 @@ resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
   from_port                    = var.app_port
   to_port                      = var.app_port
   referenced_security_group_id = aws_security_group.alb.id
+
+  # Recreate instead of modify when the referenced group is replaced: Floci ignores
+  # ModifySecurityGroupRules (docs/edge-cases.md #36). Also valid on AWS.
+  lifecycle {
+    replace_triggered_by = [aws_security_group.alb.id]
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "app_ssh_admin" {
@@ -80,6 +92,12 @@ resource "aws_vpc_security_group_egress_rule" "app_to_db" {
   from_port                    = 5432
   to_port                      = 5432
   referenced_security_group_id = aws_security_group.db.id
+
+  # Recreate instead of modify when the referenced group is replaced: Floci ignores
+  # ModifySecurityGroupRules (docs/edge-cases.md #36). Also valid on AWS.
+  lifecycle {
+    replace_triggered_by = [aws_security_group.db.id]
+  }
 }
 
 resource "aws_vpc_security_group_egress_rule" "app_https_out" {
@@ -108,6 +126,12 @@ resource "aws_vpc_security_group_ingress_rule" "db_from_app" {
   from_port                    = 5432
   to_port                      = 5432
   referenced_security_group_id = aws_security_group.app.id
+
+  # Recreate instead of modify when the referenced group is replaced: Floci ignores
+  # ModifySecurityGroupRules (docs/edge-cases.md #36). Also valid on AWS.
+  lifecycle {
+    replace_triggered_by = [aws_security_group.app.id]
+  }
 }
 # No egress rules on the database: replies to allowed inbound connections are automatic (stateful).
 
