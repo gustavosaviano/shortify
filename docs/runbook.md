@@ -193,7 +193,9 @@ curl -s http://localhost/health
 ssh -i ~/.ssh/shortify-real -p 2200 root@127.0.0.1
 
 # RDS: Floci's proxy, published to the host
-psql -h localhost -p 7001 -U shortify -d shortify -c "select short_code, clicks from links;"
+DB_SECRET=$(aws rds describe-db-instances --db-instance-identifier shortify-db --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text)
+PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "$DB_SECRET" --query SecretString --output text | python3 -c "import json,sys; print(json.load(sys.stdin)['password'])") \
+  psql -h localhost -p 7001 -U shortify -d shortify -P pager=off -c "select short_code, clicks from links;"   # read the password fresh, never save it (edge case #41)
 
 # Full path through the ALB (listeners on 80 and 8080)
 curl -s http://localhost/health
@@ -311,6 +313,7 @@ cd ~/workspace/shortify-phase1/shortify/infra/terraform
 cat terraform.tfvars          # git-ignored; must contain:
 #   admin_cidr                     = "<your public IP>/32"
 #   emulator_revoke_default_egress = true      # Floci only (edge case #34)
+#   emulator_rds_unsupported_settings = true   # Floci only (edge case #43)
 
 terraform fmt -check && terraform validate
 terraform plan -out tfplan    # read it; look for "forces replacement"
@@ -320,6 +323,8 @@ terraform output
 
 - CI runs `terraform fmt -check -recursive -diff`, `terraform init -backend=false -lockfile=readonly` and `terraform validate` on every PR (required check `Terraform`). Run the same locally before pushing; locally, `fmt -check` also covers `terraform.tfvars`, which CI never sees.
 - The provider reads `AWS_ENDPOINT_URL` and the test credentials from the shell: the code has no Floci settings.
+- The database password lives only in Secrets Manager: every `psql` against the Terraform-built database needs the `PGPASSWORD=…` prefix from section 6.
+- A failed plan still writes its `-out` file, marked errored. Judge a plan by its exit code, never by the file, and delete leftovers (edge case #44).
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
 - Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.

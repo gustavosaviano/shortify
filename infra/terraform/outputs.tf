@@ -21,3 +21,16 @@ output "security_group_ids" {
     db  = aws_security_group.db.id
   }
 }
+
+output "db_endpoint" {
+  description = "Database host and port. On Floci the address is a container IP the host cannot reach: connect to localhost on this port (edge case #14)."
+  value = {
+    address = aws_db_instance.db.address
+    port    = aws_db_instance.db.port
+  }
+}
+
+output "db_master_secret_arn" {
+  description = "ARN of the RDS-managed secret holding the master password (never the password itself)."
+  value       = aws_db_instance.db.master_user_secret[0].secret_arn
+}

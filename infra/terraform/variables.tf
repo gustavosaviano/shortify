@@ -41,3 +41,9 @@ variable "emulator_revoke_default_egress" {
   type        = bool
   default     = false
 }
+
+variable "emulator_rds_unsupported_settings" {
+  description = "Floci-only workaround: Floci doesn't implement RDS deletion protection and only stores gp2 storage (docs/edge-cases.md #43), so every plan would show a change. When true, request what Floci can store. Keep false on real AWS."
+  type        = bool
+  default     = false
+}
