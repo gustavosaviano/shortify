@@ -119,6 +119,8 @@ The same failure mode showed up in different places: a call reports success and 
 | Terraform removes the default egress rule, so it would be gone on Floci too | Terraform tries; Floci ignores the request (edge case #34) |
 | Replacing a group replaces every rule that references it | Rules *on* the group are replaced; rules that only *point at* it are updated in place |
 | `terraform plan` would flag an extra security group rule | Not with standalone rule resources (edge case #35) |
+| `Modifications complete` means the setting changed | Floci ignored deletion protection and gp3 on create and on modify (edge case #43) |
+| A plan blocked by `prevent_destroy` leaves no plan file | It saves a partial plan marked `errored`, which can't be applied (edge case #44) |
 
 ---
 

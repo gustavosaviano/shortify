@@ -54,6 +54,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Immutable deploys (replace instances every release) | No drift and no in-place port conflicts; the new version is healthy before the old one leaves, so campaign links never go down |
 | Terraform before the deploy pipeline | The pipeline reads resource IDs from Terraform outputs instead of hardcoding hand-made IDs |
 | Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; fork pull requests need approval and can never reach the self-hosted deploy runner |
+| RDS password managed by RDS in Secrets Manager; two layers of deletion protection | Credentials never touch code, plans or state; the click history can't be deleted by one mistaken command |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 
@@ -66,7 +67,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network and security groups done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups and RDS done |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |

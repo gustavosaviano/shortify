@@ -198,6 +198,12 @@ Read the secret's ARN from `describe-db-instances` (`MasterUserSecret.SecretArn`
 **What is an ARN?**
 An Amazon Resource Name, the unique ID of any AWS resource: `arn:partition:service:region:account:resource`. IAM policies use ARNs to say which resources an identity may use, e.g. "may read this secret". Floci's account ID is `000000000000`.
 
+**How is the database protected from being destroyed?**
+Two layers. `prevent_destroy` makes Terraform refuse to plan its destruction; it lives in the code, so deleting the resource block removes it. `deletion_protection` makes the AWS API refuse the delete, whatever tool calls it. If both fail, `skip_final_snapshot = false` takes a last snapshot and `delete_automated_backups = false` keeps the automated backups until they expire. On Floci only the first layer exists (edge case #43).
+
+**How do RDS backups work?**
+RDS makes them, not Terraform. Automated backups (`backup_retention_period = 7`) are a daily snapshot plus transaction logs, allowing a restore to any second of the last 7 days. Snapshots are manual and kept until deleted; the final snapshot is one. A restore always creates a new instance with a new endpoint. Whether Floci takes any backups is untested.
+
 ---
 
 ## EC2 and SSH
@@ -371,3 +377,9 @@ Plans a destroy-and-recreate of that resource even though its code didn't change
 
 **Where do secrets and personal values go?**
 In `terraform.tfvars` (git-ignored), not in code. They still appear in plans, state and debug logs, so none of those are committed.
+
+**What is a postcondition?**
+A check in a resource's `lifecycle` block, evaluated after the resource is created or read. `shortify-db` uses one to fail the apply if the API doesn't report deletion protection on: it verifies the effect, not the request.
+
+**Does a failed plan leave a plan file?**
+Yes. With `-out`, Terraform saves the partial plan, marked as errored, so it can be inspected with `terraform show -json`; it can't be applied. Judge a plan by its exit code, not by the file (edge case #44).

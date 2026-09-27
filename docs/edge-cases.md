@@ -135,6 +135,9 @@ The stack's init hook (`init/ready.d/01-setup.sh`) calls the AWS CLI, which only
 **42. Deleting the instance orphans its managed secret.** *(tested)*
 After `delete-db-instance` and the `db-instance-deleted` waiter, `describe-secret` still returned the secret with no `DeletedDate`. As far as known, AWS removes the RDS-managed secret together with the instance (not verified here). Cleanup: `aws secretsmanager delete-secret --secret-id <arn> --force-delete-without-recovery`, then confirm `describe-secret` returns `ResourceNotFoundException`. After any database destroy or replacement on Floci, check for leftovers: `aws secretsmanager list-secrets --query "SecretList[?starts_with(Name,'rds!')].Name"`.
 
+**43. Floci doesn't implement RDS deletion protection, and only stores gp2.** *(tested)*
+`shortify-db` was created with `deletion_protection = true` and `storage_type = "gp3"`; the next plan showed `false -> true` and `"gp2" -> "gp3"`. `describe-db-instances` returns `DeletionProtection: None` (the field is absent) and `StorageType: gp2`. The in-place update reported `Modifications complete` and changed nothing (false success, like #36). A throwaway instance created with `--deletion-protection` was deleted without complaint; on AWS that delete fails. Workaround: `emulator_rds_unsupported_settings` (off by default, set in `terraform.tfvars`) requests `deletion_protection = false` and `gp2`, so the plan is honest and clean. A postcondition fails the apply whenever the API doesn't report deletion protection on, unless the flag is set; tested with the flag off on Floci, the apply failed with that message. On Floci only `prevent_destroy` protects the database, and it disappears if the resource block is deleted.
+
 ## Application
 
 **15. `short_url` is wrong behind the ALB.**
@@ -181,6 +184,9 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 **37. The admin IP leaks into plans, state and debug logs.**
 `terraform.tfvars` (git-ignored) keeps it out of the code, but `terraform plan` output, `terraform.tfstate`, `tfplan` and `tf-debug.log` all contain it. None of them is ever committed; watch CI logs once Terraform runs in the pipeline. Locally, `terraform fmt -check -recursive -diff` also checks the git-ignored `terraform.tfvars` and prints its contents, IP included, when it isn't formatted: don't paste that output anywhere public. CI never sees the file.
 
+**44. A failed plan still writes its `-out` file.** *(tested)*
+`terraform plan -destroy -out tfplan` failed on `prevent_destroy` (`Instance cannot be destroyed`, exit 1), yet `tfplan` existed: a partial plan with 22 changes. `terraform show -json tfplan` reports `errored: true`, and Terraform documents that an errored plan can't be applied (not tested by applying it). Check the exit code, never the file's existence, and delete leftover plan files. Automation must follow the same rule.
+
 ---
 
 ## Floci vs real AWS
@@ -202,6 +208,8 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 | Provisioning time | Seconds | Minutes |
 | RDS create status | `available` immediately | `creating` for minutes |
 | RDS-managed secret on instance delete | Left behind (orphaned) | Deleted with the instance (not verified here) |
+| RDS deletion protection | Not implemented (field absent, delete succeeds) | Enforced |
+| RDS storage type | Always gp2 | As requested |
 
 ## Production notes
 
