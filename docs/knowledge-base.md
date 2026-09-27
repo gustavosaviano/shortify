@@ -320,6 +320,9 @@ Dev/prod parity. Different SQL dialects, types and constraint behaviour mean tes
 **Why pin actions to a commit SHA?**
 A tag can be moved to different code; a SHA can't.
 
+**Why pin the runner OS (`ubuntu-24.04`) instead of `ubuntu-latest`?**
+Same principle, one level down: `ubuntu-latest` is a label GitHub moves to newer releases. Pinning makes an OS upgrade a reviewed commit instead of a date on GitHub's calendar, and keeps CI on the same OS as the EC2 hosts (edge case #32).
+
 **Why is a public repo with a self-hosted runner risky, and how is it contained?**
 A fork's pull request runs its own copy of the workflow, so it could target the self-hosted runner. Containment: approval required for all external contributors' workflows, never use `pull_request_target`, deploy only on `push` to `main`, and CI jobs only on GitHub-hosted runners.
 

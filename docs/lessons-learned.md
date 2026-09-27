@@ -163,6 +163,6 @@ The end-of-phase test round, run on a healthy baseline:
 11. An HTTPS listener and 80 → 443 redirect with a Floci ACM certificate.
 12. Current AWS free-tier and pricing figures (not verified here).
 14. Report both Floci bugs (edge cases #34 and #36) with the evidence.
-15. Pin CI runners to `ubuntu-24.04` before 2026-10-19 (edge case #32).
+15. *(Resolved: CI runners pinned to `ubuntu-24.04`, edge case #32.)*
 16. What mounts `/mnt/e` a second time? Test: `findmnt /mnt/e` before and after one `docker run -v "$PWD":/src`.
 17. Does real AWS delete the RDS-managed secret together with the instance? (Floci leaves it behind: edge case #42.)
