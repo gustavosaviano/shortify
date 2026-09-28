@@ -67,7 +67,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups and RDS done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS and ALB done |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
@@ -130,7 +130,7 @@ shortify/
 ├── .github/workflows/    # CI: lint → test, plus terraform fmt/validate (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite, runs against real PostgreSQL
-├── infra/terraform/      # Phase 4: network and security groups as code
+├── infra/terraform/      # Phase 4: network, security groups, RDS and ALB as code
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)
 ├── requirements.txt      # runtime dependencies (requirements-dev.txt: test and lint tools)

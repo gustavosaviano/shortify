@@ -60,6 +60,9 @@ It doesn't touch the database, so the ALB keeps a target `healthy` even when RDS
 **24. The ALB DNS name resolves to IPv6 loopback.** *(tested)*
 `getent hosts $ALB_DNS` returns `::1`, listed under `localhost.floci.io`. It works because Docker publishes the listener ports on IPv6 too (`[::]:80`). On real AWS an ALB name resolves to several public IPs that change over time: point a Route 53 alias record at the name and never hardcode IPs.
 
+**46. ALB settings are stored; enforcement is untested.** *(tested)*
+The Terraform-built ALB (`shortify-alb`, listener 80 → target group `shortify-app`) took 61 s to create, while the target group and listener took about 1 s. The provider waits for `active`, so Floci appears to simulate provisioning. The next plan was clean, and `describe-load-balancer-attributes` / `describe-target-group-attributes` returned exactly what was requested: `routing.http.drop_invalid_header_fields.enabled true`, `deletion_protection.enabled false`, `deregistration_delay.timeout_seconds 30`. That was checked through the API because a clean plan alone could have been a false success (#43). Stored doesn't mean enforced: whether Floci really drops invalid headers or waits 30 s while draining is untested. Blue/green deploys (Phase 3b) will exercise the deregistration delay. With no targets, `http://localhost/` returns `503` with the plain-text body `No targets available`.
+
 ## Instances
 
 **9. Only a fresh launch gives a working instance.** *(tested)*
@@ -205,10 +208,11 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 | Instance after reboot/stop/start | Filesystem kept; no sshd or app | sshd back via systemd; hand-started app lost |
 | ALB → instance | Floci must be on the VPC Docker network | Native VPC routing |
 | ALB DNS name | Resolves to `::1` | Several public IPs that change |
+| ALB with no healthy targets | `503`, plain-text body `No targets available` | `503` with an HTML body (not verified here) |
 | Container IPs from the host | Not reachable (Docker Desktop) | N/A |
 | Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
 | Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
-| Provisioning time | Seconds | Minutes |
+| Provisioning time | Seconds (an ALB: about 60 s) | Minutes |
 | RDS create status | `available` immediately | `creating` for minutes |
 | RDS-managed secret on instance delete | Left behind (orphaned) | Deleted with the instance (not verified here) |
 | RDS deletion protection | Not implemented (field absent, delete succeeds) | Enforced |
