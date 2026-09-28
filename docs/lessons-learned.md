@@ -85,8 +85,10 @@ The same failure mode showed up in different places: a call reports success and 
 | Design of the deploy (Phase 3) | A new app version fails to bind port 8000 in the background, the old one keeps answering `/health`, the deploy "succeeds" | Reasoned out before building: verify the *new* version via `/version`, not just any answer |
 | Floci revoke (Phase 4) | `RevokeSecurityGroupEgress` returns `true`; the default rule stays | Checked the actual rules with `describe-security-groups`, then the request in the Terraform debug log |
 | Floci rule modification (Phase 4) | `Modifications complete`, yet the next plan shows the old value; the rule points at a deleted group | Reading the plan after apply instead of trusting the apply, then repeating the call with the CLI to rule out the provider |
+| Floci key pair import (Phase 4) | `Creation complete`; the next plan wants to add every tag | `plan -detailed-exitcode` right after the apply, then `describe-key-pairs` to rule out the provider |
+| The key pair tag workaround itself (Phase 4) | `Creation complete`, no error, but the check had iterated over an empty map and verified nothing | Reading the `Executing:` line: `--tags` was empty and the check lines were missing. Expected values now come from the configuration, and a precondition refuses an empty set |
 
-**Takeaway:** verify the effect, not the return code.
+**Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check.
 
 ## CI gate (Phase 3a)
 
@@ -122,6 +124,8 @@ The same failure mode showed up in different places: a call reports success and 
 | `terraform plan` would flag an extra security group rule | Not with standalone rule resources (edge case #35) |
 | `Modifications complete` means the setting changed | Floci ignored deletion protection and gp3 on create and on modify (edge case #43) |
 | A plan blocked by `prevent_destroy` leaves no plan file | It saves a partial plan marked `errored`, which can't be applied (edge case #44) |
+| A green `Terraform` CI job means the code will apply | It means well-formed: `validate` treats every variable as unknown and calls no API. Only a `plan` against the API proves more |
+| A clean plan proves the key pair's type | `key_type` is computed and never compared with the code; only `describe-key-pairs` shows it (edge case #47) |
 
 ---
 

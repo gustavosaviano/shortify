@@ -99,6 +99,7 @@ Host shortify-ec2
 ## 3. Start of session
 
 ```bash
+cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
 shortify_up                                                                    # starts the stack and loads the IDs
 docker exec floci-ui-floci-1 id                                               # must list the docker.sock gid
 docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # must print nothing
@@ -318,6 +319,8 @@ cat terraform.tfvars          # git-ignored; must contain:
 #   admin_cidr                     = "<your public IP>/32"
 #   emulator_revoke_default_egress = true      # Floci only (edge case #34)
 #   emulator_rds_unsupported_settings = true   # Floci only (edge case #43)
+#   emulator_key_pair_create_tags     = true   # Floci only (edge case #47)
+#   ssh_public_key                    = "ssh-ed25519 ..."   # contents of ~/.ssh/shortify-real.pub, never a path
 
 terraform fmt -check && terraform validate
 terraform plan -out tfplan    # read it; look for "forces replacement"
@@ -331,6 +334,8 @@ terraform output
 - A failed plan still writes its `-out` file, marked errored. Judge a plan by its exit code, never by the file, and delete leftovers (edge case #44).
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
+- Set `ssh_public_key` without typing it: `printf 'ssh_public_key = "%s"\n' "$(cat ~/.ssh/shortify-real.pub)" >> terraform.tfvars`, then `terraform fmt terraform.tfvars` (an unformatted file makes `fmt -check` print it, admin IP included: edge case #37).
+- Rotate the admin key: generate a new key, update `ssh_public_key`, plan. The key pair is replaced (AWS can't update key material); on Floci the tag workaround re-runs (#47).
 - Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
 - Debug the API calls: `TF_LOG=DEBUG TF_LOG_PATH=tf-debug.log terraform apply tfplan` (delete the log afterwards).
 - Check that no default allow-all egress rule survived:

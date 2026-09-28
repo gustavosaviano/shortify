@@ -55,6 +55,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Terraform before the deploy pipeline | The pipeline reads resource IDs from Terraform outputs instead of hardcoding hand-made IDs |
 | Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; fork pull requests need approval and can never reach the self-hosted deploy runner |
 | RDS password managed by RDS in Secrets Manager; two layers of deletion protection | Credentials never touch code, plans or state; the click history can't be deleted by one mistaken command |
+| SSH public key passed as a value, never a file path | The same code runs on a laptop and in the pipeline; nothing depends on one machine's filesystem |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 
@@ -67,7 +68,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS and ALB done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB and key pair done |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
@@ -130,7 +131,7 @@ shortify/
 ├── .github/workflows/    # CI: lint → test, plus terraform fmt/validate (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite, runs against real PostgreSQL
-├── infra/terraform/      # Phase 4: network, security groups, RDS and ALB as code
+├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB and key pair as code
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)
 ├── requirements.txt      # runtime dependencies (requirements-dev.txt: test and lint tools)
