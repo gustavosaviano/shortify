@@ -116,6 +116,7 @@ The same failure mode showed up in different places: a call reports success and 
 | An ALB DNS name resolves to `127.0.0.1` | It resolves to `::1` |
 | `ss` showing nothing inside Floci was a mystery | `ss` isn't installed in the image |
 | Ignoring `.terraform.lock.hcl` in git | The lock file must be committed |
+| A job log shows which runner label the job requested | It shows the image and OS version only; the requested label comes from the jobs API (edge case #32) |
 | Terraform removes the default egress rule, so it would be gone on Floci too | Terraform tries; Floci ignores the request (edge case #34) |
 | Replacing a group replaces every rule that references it | Rules *on* the group are replaced; rules that only *point at* it are updated in place |
 | `terraform plan` would flag an extra security group rule | Not with standalone rule resources (edge case #35) |

@@ -341,6 +341,9 @@ A required check whose workflow is skipped by a `paths:` filter stays pending fo
 **Why does CI take about a minute when the tests take 0.4 s?**
 Setup dominates: a fresh VM, the `postgres:16` service and its health check, Python and dependencies, plus `Test` waiting for `Lint`. Measured and accepted for now; running `Test` in parallel with `Lint` is the first lever if it ever matters.
 
+**How do I know a green result belongs to my latest push?**
+Match the run to the commit: `gh run list --branch <branch> --json headSha,status,conclusion` and compare `headSha` with `git rev-parse --short HEAD`. A summary taken seconds after a push may still describe the previous commit.
+
 ---
 
 ## Terraform
