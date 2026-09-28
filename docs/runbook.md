@@ -43,7 +43,7 @@ Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. D
 ```bash
 cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
-shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-ids.sh; }
+shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
 type shortify_up                            # prints the function
@@ -69,24 +69,14 @@ gh auth status
 
 ## 2. Session helpers
 
-Shell variables die with the terminal, so IDs are rediscovered by name.
+Shell variables die with the terminal. `scripts/shortify-env.sh` (in the repo) exports the IDs from `terraform output`, so they always match what Terraform built. It's all-or-nothing: if the state or any output is missing, it prints an error and exports nothing, so an empty or `None` ID can't reach a command (edge case #22). `shortify_up` sources it.
 
 ```bash
-cat > ~/workspace/shortify-ids.sh << 'IDS'
-export VPC_ID=$(aws ec2 describe-vpcs --filters Name=tag:Name,Values=shortify-vpc --query 'Vpcs[0].VpcId' --output text)
-export PUB1=$(aws ec2 describe-subnets --filters Name=tag:Name,Values=shortify-public-01 --query 'Subnets[0].SubnetId' --output text)
-export PUB2=$(aws ec2 describe-subnets --filters Name=tag:Name,Values=shortify-public-02 --query 'Subnets[0].SubnetId' --output text)
-export RDS_SG=$(aws ec2 describe-security-groups --filters Name=group-name,Values=shortify-rds-sg --query 'SecurityGroups[0].GroupId' --output text)
-export EC2_SG=$(aws ec2 describe-security-groups --filters Name=group-name,Values=shortify-ec2-sg --query 'SecurityGroups[0].GroupId' --output text)
-export ALB_SG=$(aws ec2 describe-security-groups --filters Name=group-name,Values=shortify-alb-sg --query 'SecurityGroups[0].GroupId' --output text)
-export INSTANCE_ID=$(aws ec2 describe-instances --filters Name=instance-state-name,Values=running --query 'Reservations[-1].Instances[0].InstanceId' --output text)
-export TG_ARN=$(aws elbv2 describe-target-groups --names shortify-alb-target --query 'TargetGroups[0].TargetGroupArn' --output text)
-export ALB_ARN=$(aws elbv2 describe-load-balancers --names shortify-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text)
-export ALB_DNS=$(aws elbv2 describe-load-balancers --names shortify-alb --query 'LoadBalancers[0].DNSName' --output text)
-IDS
-source ~/workspace/shortify-ids.sh
-env | grep -E 'VPC_ID|PUB|_SG|INSTANCE|ARN|DNS'   # nothing may be None; INSTANCE_ID must match docker ps
+source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh
+env | grep -E '^(VPC_ID|PUB[12]|ALB_SG|EC2_SG|RDS_SG|TG_ARN|ALB_DNS|DB_PORT|DB_SECRET)=' | sort   # 10 lines
 ```
+
+When `outputs.tf` gains or renames an output the runbook uses, update the script in the same PR. `INSTANCE_ID` comes back when instances are launched.
 
 Watch target health for 90 seconds:
 
