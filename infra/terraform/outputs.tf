@@ -34,3 +34,13 @@ output "db_master_secret_arn" {
   description = "ARN of the RDS-managed secret holding the master password (never the password itself)."
   value       = aws_db_instance.db.master_user_secret[0].secret_arn
 }
+
+output "alb_dns_name" {
+  description = "Public DNS name of the ALB. On Floci it resolves to ::1 (edge case #24)."
+  value       = aws_lb.main.dns_name
+}
+
+output "target_group_arn" {
+  description = "Target group the deploy pipeline registers instances in (Phase 3b)."
+  value       = aws_lb_target_group.app.arn
+}

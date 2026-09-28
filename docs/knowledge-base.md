@@ -260,6 +260,9 @@ No, one. HTTP vs HTTPS is a listener concern. TLS terminates at the load balance
 **Where does the HTTP → HTTPS redirect happen?**
 On the port-80 listener, whose action is `redirect` instead of `forward`. The app never sees the plain-HTTP request.
 
+**What is ACM, and why is HTTPS "later"?**
+AWS Certificate Manager issues the TLS certificate the ALB's 443 listener presents, so browsers trust `https://<campaign domain>/<code>`. It proves domain ownership through a DNS record and renews the certificate automatically while that record stays in place: an expired certificate would put a security warning on every campaign link. It needs a domain to validate, and the project has none yet (Route 53 is paid). Public certificates on an ALB are believed to have no charge (pricing not verified here). Whether Floci's ACM supports a 443 listener is open question 11.
+
 **Why listener port 80 but target port 8000?**
 The listener is what clients hit, and the target group is where the app listens. The load balancer translates between the two.
 
