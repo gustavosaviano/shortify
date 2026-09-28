@@ -166,6 +166,9 @@ A deliberately broken PR turned red (Lint failed, Test skipped) but the merge bu
 **40. A required check skipped by a `paths:` filter blocks the PR forever.** *(documented)*
 GitHub's docs: if a workflow is skipped by path, branch or commit-message filtering, its checks stay `Pending` and a PR that requires them can't merge ("Waiting for status to be reported"). A job skipped by an `if:` condition instead reports `Success`, so a wrong "did `.tf` files change?" guess would pass a required check without running it. Decision: the `Terraform` job (`fmt -check`, `init -backend=false -lockfile=readonly`, `validate`) runs on every PR; it takes about 15 s. Effect tested on PR #5: a deliberately misaligned `=` in `variables.tf` turned `Terraform` red at the `fmt` step (exit 3) while `Lint` and `Test` stayed green; restoring it with `terraform fmt` turned it green.
 
+**45. Ubuntu's `gh` package is broken: install it from GitHub's repository.** *(tested)*
+The Ubuntu package (`gh` 2.46.0) failed on `gh pr edit` because it still queries the retired Projects (classic) API; that's why the title edit on PR #6 failed. GitHub's install docs confirm that the community-distributed `2.45.x`/`2.46.x` packages are broken by deprecated APIs and recommend the official apt repository. Installed `gh` 2.101.0 from `cli.github.com/packages` after checking the keyring file's published SHA256 and both key fingerprints (runbook section 1). The login in `~/.config/gh/hosts.yml` survived the upgrade. Effect verified on PR #7: `gh pr merge --squash --subject` set the commit title. Related practice: judge a pushed commit by its own run (`gh run list --json headSha,conclusion`), not by `gh pr checks` right after the push. On PR #7 that command printed exactly the previous run's timings; whether it was showing the old run is unverified.
+
 ## Terraform (Phase 4)
 
 **34. Floci ignores the provider's removal of the default egress rule.** *(tested)*

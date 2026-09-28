@@ -51,6 +51,20 @@ aws s3 ls                                   # empty output, no error
 curl http://localhost:4566/_floci/health    # every service "running"
 ```
 
+**GitHub CLI:** install `gh` from GitHub's apt repository, never Ubuntu's package (broken upstream, edge case #45). Verify the key before trusting it; the checksum and fingerprints are published at the top of `docs/install_linux.md` in `cli/cli`.
+
+```bash
+out=$(mktemp)
+wget -nv -O "$out" https://cli.github.com/packages/githubcli-archive-keyring.gpg
+echo "6084d5d7bd8e288441e0e94fc6275570895da18e6751f70f057485dc2d1a811b  $out" | sha256sum -c -   # must print OK
+gpg --show-keys "$out"      # fingerprints 2C6106201985B60E6C7AC87323F3D4EA75716059 and 7F38BBB59D064DBCB3D84D725612B36462313325
+sudo install -D -m 644 "$out" /etc/apt/keyrings/githubcli-archive-keyring.gpg && rm -f "$out"
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+sudo apt update && sudo apt install gh -y
+apt-cache policy gh | head -6    # installed version must come from cli.github.com
+gh auth status
+```
+
 ---
 
 ## 2. Session helpers
