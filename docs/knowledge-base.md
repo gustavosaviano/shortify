@@ -392,3 +392,15 @@ A check in a resource's `lifecycle` block, evaluated after the resource is creat
 
 **Does a failed plan leave a plan file?**
 Yes. With `-out`, Terraform saves the partial plan, marked as errored, so it can be inspected with `terraform show -json`; it can't be applied. Judge a plan by its exit code, not by the file (edge case #44).
+
+**What does the CI `Terraform` job actually prove?**
+That the code is well-formed: canonical formatting, a lock file that matches the providers, and a configuration whose syntax, types and references are consistent. `validate` treats every input variable as unknown and calls no API, which is why required variables like `admin_cidr` don't need values in CI. It doesn't prove the code will apply; only a `plan` against the API does.
+
+**Why is the SSH public key passed as its contents, not as a file path?**
+A path means "this file must exist at this location on whatever machine runs Terraform": true on the laptop, false on a pipeline runner, and a default would put one person's filesystem layout in a public repo. It would also make the plan depend on a file outside the repo. A value is an explicit input, set in `terraform.tfvars` locally and via `TF_VAR_ssh_public_key` in a pipeline. The public key isn't secret; the private key never leaves `~/.ssh`.
+
+**What happens when the admin key is rotated?**
+A new `public_key` replaces the key pair, because AWS can't update key material. The instance refers to the key pair by name, which doesn't change, so on its own the instance would keep running with the old key in `authorized_keys` (keys are only installed at launch). That's why the instance uses `replace_triggered_by` on the key pair: a new key means a new instance, consistent with immutable deploys.
+
+**How should an emulator workaround verify itself?**
+Against the intended value from the configuration, never against the resource's own attributes: after a create, those hold what the API returned, which is exactly what the emulator got wrong. And the check must fail when it has nothing to check, e.g. with a precondition on a non-empty expected set (edge case #47).

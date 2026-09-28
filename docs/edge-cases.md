@@ -193,6 +193,11 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 **44. A failed plan still writes its `-out` file.** *(tested)*
 `terraform plan -destroy -out tfplan` failed on `prevent_destroy` (`Instance cannot be destroyed`, exit 1), yet `tfplan` existed: a partial plan with 22 changes. `terraform show -json tfplan` reports `errored: true`, and Terraform documents that an errored plan can't be applied (not tested by applying it). Check the exit code, never the file's existence, and delete leftover plan files. Automation must follow the same rule.
 
+**47. Floci drops the tags sent with a key pair import, and returns no key type.** *(tested)*
+`aws_key_pair.admin` (an ed25519 public key, imported) was created, yet the next plan wanted to add `Name`, `ManagedBy` and `Project`. `describe-key-pairs` returned `Tags: []` and `KeyType: null`. The fingerprint matched `ssh-keygen -lf` exactly (Floci shows it as base64 SHA-256 with `=` padding and no `SHA256:` prefix; AWS's format not verified here), so the key material itself was stored correctly. The in-place update (`CreateTags` on the key pair ID) did store the tags and the next plan was clean: only the tags inside `ImportKeyPair` (`TagSpecifications`) are dropped. `key_type` is a computed attribute, so no plan can reveal the missing type; nothing in this project reads it.
+"Apply twice" isn't reproducible, and every create repeats the bug: a rebuild, and every key rotation, since a new key replaces the key pair. Rejected: `ignore_changes` on the tags (it would hide real drift on AWS) and dropping the tags (`default_tags` still applies). Workaround: `terraform_data.key_pair_tags` in `keypair.tf`, off by default (`emulator_key_pair_create_tags`). It runs `create-tags` right after the key pair is created, re-runs whenever the key pair is replaced (`triggers_replace = key_pair_id`), and checks each tag's value, failing the apply if one is missing. The expected tags come from the configuration (`local.default_tags` merged with the key pair's own), never from `tags_all`: after create that attribute holds the API's read-back, and the first version of the workaround looped over that empty map and verified nothing (lessons-learned, false-success pattern). A precondition now fails the apply if the expected set is ever empty. That first run also showed `create-tags` accepting an empty `--tags` without an error (CLI or Floci: unverified which).
+Tested with `-replace=aws_key_pair.admin`: a single apply ran `create-tags` with three pairs plus three checks, and the next `plan -detailed-exitcode` returned `0`. The check's failure path (a tag still missing after `create-tags`) hasn't been exercised. To report upstream with #34, #36, #42 and #43.
+
 ---
 
 ## Floci vs real AWS
@@ -217,6 +222,8 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 | RDS-managed secret on instance delete | Left behind (orphaned) | Deleted with the instance (not verified here) |
 | RDS deletion protection | Not implemented (field absent, delete succeeds) | Enforced |
 | RDS storage type | Always gp2 | As requested |
+| Key pair tags sent with `ImportKeyPair` | Dropped (`CreateTags` afterwards works) | Stored |
+| Key pair `KeyType` | Not returned (`null`) | `rsa` or `ed25519` |
 
 ## Production notes
 
