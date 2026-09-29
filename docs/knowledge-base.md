@@ -404,3 +404,9 @@ A new `public_key` replaces the key pair, because AWS can't update key material.
 
 **How should an emulator workaround verify itself?**
 Against the intended value from the configuration, never against the resource's own attributes: after a create, those hold what the API returned, which is exactly what the emulator got wrong. And the check must fail when it has nothing to check, e.g. with a precondition on a non-empty expected set (edge case #47).
+
+**Why is the AMI a variable instead of a constant?**
+In immutable deploys the image is a release input: every release is a new image, built and passed in by the pipeline (Phase 3b), so shipping a version never means editing code. It's also environment-specific: `ami-ubuntu2404-amd64` exists only on Floci, and AWS AMI IDs differ per region.
+
+**How do I know a new instance trusts the right key?**
+A successful login only proves that some key in `authorized_keys` matches. Compare fingerprints: `ssh-keygen -lf /root/.ssh/authorized_keys` on the instance against `ssh-keygen -lf` of the local `.pub`, and check that there's exactly one entry.

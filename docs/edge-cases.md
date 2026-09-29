@@ -198,6 +198,11 @@ One interrupt lets Terraform finish its current step and exit cleanly; a second 
 "Apply twice" isn't reproducible, and every create repeats the bug: a rebuild, and every key rotation, since a new key replaces the key pair. Rejected: `ignore_changes` on the tags (it would hide real drift on AWS) and dropping the tags (`default_tags` still applies). Workaround: `terraform_data.key_pair_tags` in `keypair.tf`, off by default (`emulator_key_pair_create_tags`). It runs `create-tags` right after the key pair is created, re-runs whenever the key pair is replaced (`triggers_replace = key_pair_id`), and checks each tag's value, failing the apply if one is missing. The expected tags come from the configuration (`local.default_tags` merged with the key pair's own), never from `tags_all`: after create that attribute holds the API's read-back, and the first version of the workaround looped over that empty map and verified nothing (lessons-learned, false-success pattern). A precondition now fails the apply if the expected set is ever empty. That first run also showed `create-tags` accepting an empty `--tags` without an error (CLI or Floci: unverified which).
 Tested with `-replace=aws_key_pair.admin`: a single apply ran `create-tags` with three pairs plus three checks, and the next `plan -detailed-exitcode` returned `0`. The check's failure path (a tag still missing after `create-tags`) hasn't been exercised. To report upstream with #34, #36, #42 and #43.
 
+**48. `aws_instance` works on Floci from Terraform.** *(tested)*
+`aws_instance.app` (`ami-ubuntu2404-amd64`, `t3.micro`, `public-01`, the `app` SG, key pair `shortify-admin`) was created in 10 s, and the next `plan -detailed-exitcode` returned `0`: every attribute the provider reads back matched. The container was `Up` with SSH on host port 2200, sshd answered on the first try (the instance was already past the ~34 s delay, #25), and `/root/.ssh/authorized_keys` held exactly one key, whose fingerprint equals `ssh-keygen -lf` of the local `.pub`: Floci installs the Terraform key pair's key at launch. A login alone would only prove that *some* accepted key matches.
+The earlier `aws_instance` provider crash didn't reproduce with provider 6.66.0 and this minimal configuration. Its log was never kept, so it's unexplained, not fixed. The two `provider: plugin exited` lines in the debug log are the provider's normal shutdown; a crash shows `panic:` and a goroutine trace.
+Key rotation: `plan -replace=aws_key_pair.admin` planned the instance replacement `due to changes in replace_triggered_by` (3 to add, 3 to destroy; planned, not applied). Not set yet, each a separate test: IMDSv2 (`http_tokens = "required"`) and user data. Any Floci stop still kills the instance (#26): after a Floci restart, replace it with `-replace=aws_instance.app`. Whether a plan notices the dead instance by itself is untested.
+
 ---
 
 ## Floci vs real AWS
@@ -217,7 +222,7 @@ Tested with `-replace=aws_key_pair.admin`: a single apply ran `create-tags` with
 | Container IPs from the host | Not reachable (Docker Desktop) | N/A |
 | Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
 | Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
-| Provisioning time | Seconds (an ALB: about 60 s) | Minutes |
+| Provisioning time | Seconds (an instance: about 10 s; an ALB: about 60 s) | Minutes |
 | RDS create status | `available` immediately | `creating` for minutes |
 | RDS-managed secret on instance delete | Left behind (orphaned) | Deleted with the instance (not verified here) |
 | RDS deletion protection | Not implemented (field absent, delete succeeds) | Enforced |

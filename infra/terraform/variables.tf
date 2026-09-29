@@ -63,3 +63,13 @@ variable "emulator_key_pair_create_tags" {
   type        = bool
   default     = false
 }
+
+variable "app_ami_id" {
+  description = "AMI for the app instances. A release input, not a constant: Floci uses ami-ubuntu2404-amd64; on AWS the pipeline passes the image it built (Phase 3b). Set it in terraform.tfvars locally."
+  type        = string
+
+  validation {
+    condition     = can(regex("^ami-[a-z0-9-]+$", var.app_ami_id))
+    error_message = "app_ami_id must be an AMI ID (ami-...)."
+  }
+}

@@ -126,6 +126,9 @@ The same failure mode showed up in different places: a call reports success and 
 | A plan blocked by `prevent_destroy` leaves no plan file | It saves a partial plan marked `errored`, which can't be applied (edge case #44) |
 | A green `Terraform` CI job means the code will apply | It means well-formed: `validate` treats every variable as unknown and calls no API. Only a `plan` against the API proves more |
 | A clean plan proves the key pair's type | `key_type` is computed and never compared with the code; only `describe-key-pairs` shows it (edge case #47) |
+| An anchor check makes an edit script safe to re-run | It only proves the anchor exists. A block run twice inserted the `instance_id` output and `INSTANCE_ID` twice, and Python silently kept the last duplicate dict key. Edit scripts now also refuse when the new text is already present |
+| A `panic` count above 0 in a Terraform debug log means a crash | `provider: plugin exited` is the provider's normal shutdown; a crash shows `panic:` and a goroutine trace (edge case #48) |
+| An instance that accepts the SSH login has the Terraform key | Login proves that *some* accepted key matches; comparing `ssh-keygen -lf /root/.ssh/authorized_keys` with the local `.pub` proves which (edge case #48) |
 
 ---
 
