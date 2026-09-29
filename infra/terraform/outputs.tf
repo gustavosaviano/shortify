@@ -44,3 +44,8 @@ output "target_group_arn" {
   description = "Target group the deploy pipeline registers instances in (Phase 3b)."
   value       = aws_lb_target_group.app.arn
 }
+
+output "instance_id" {
+  description = "ID of the app instance. On Floci, SSH is on a host port: docker port floci-ec2-<id> 22/tcp (edge case #21)."
+  value       = aws_instance.app.id
+}

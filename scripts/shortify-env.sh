@@ -26,6 +26,7 @@ wanted = {
     "ALB_DNS":   lambda o: o["alb_dns_name"],
     "DB_PORT":   lambda o: o["db_endpoint"]["port"],   # connect to localhost (edge case #14)
     "DB_SECRET": lambda o: o["db_master_secret_arn"],
+    "INSTANCE_ID": lambda o: o["instance_id"],
 }
 lines = []
 for name, get in wanted.items():

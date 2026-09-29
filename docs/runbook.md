@@ -73,10 +73,10 @@ Shell variables die with the terminal. `scripts/shortify-env.sh` (in the repo) e
 
 ```bash
 source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh
-env | grep -E '^(VPC_ID|PUB[12]|ALB_SG|EC2_SG|RDS_SG|TG_ARN|ALB_DNS|DB_PORT|DB_SECRET)=' | sort   # 10 lines
+env | grep -E '^(VPC_ID|PUB[12]|ALB_SG|EC2_SG|RDS_SG|TG_ARN|ALB_DNS|DB_PORT|DB_SECRET|INSTANCE_ID)=' | sort   # 11 lines
 ```
 
-When `outputs.tf` gains or renames an output the runbook uses, update the script in the same PR. `INSTANCE_ID` comes back when instances are launched.
+When `outputs.tf` gains or renames an output the runbook uses, update the script in the same PR. `INSTANCE_ID` comes from the `instance_id` output. The instance's SSH host port doesn't come from Terraform: `docker port floci-ec2-$INSTANCE_ID 22/tcp`.
 
 Watch target health for 90 seconds:
 
@@ -140,6 +140,8 @@ docker inspect floci-ui-floci-1 --format '{{range $k,$v := .NetworkSettings.Netw
 ---
 
 ## 5. Replace the instance
+
+> **Phase 4:** the instance is now managed by Terraform. Replace it with `terraform plan -replace=aws_instance.app -out tfplan` (section 9). The CLI steps below are the manual Phase 2 path, kept until Ansible takes over the deploy.
 
 This is the recovery procedure: replace, don't repair.
 
@@ -321,6 +323,7 @@ cat terraform.tfvars          # git-ignored; must contain:
 #   emulator_rds_unsupported_settings = true   # Floci only (edge case #43)
 #   emulator_key_pair_create_tags     = true   # Floci only (edge case #47)
 #   ssh_public_key                    = "ssh-ed25519 ..."   # contents of ~/.ssh/shortify-real.pub, never a path
+#   app_ami_id                        = "ami-ubuntu2404-amd64"   # Floci's AMI; on AWS the pipeline passes the image it built
 
 terraform fmt -check && terraform validate
 terraform plan -out tfplan    # read it; look for "forces replacement"
@@ -335,7 +338,9 @@ terraform output
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
 - Set `ssh_public_key` without typing it: `printf 'ssh_public_key = "%s"\n' "$(cat ~/.ssh/shortify-real.pub)" >> terraform.tfvars`, then `terraform fmt terraform.tfvars` (an unformatted file makes `fmt -check` print it, admin IP included: edge case #37).
-- Rotate the admin key: generate a new key, update `ssh_public_key`, plan. The key pair is replaced (AWS can't update key material); on Floci the tag workaround re-runs (#47).
+- Rotate the admin key: generate a new key, update `ssh_public_key`, plan. The key pair is replaced (AWS can't update key material) and the instance with it (`replace_triggered_by`: keys are only installed at launch); on Floci the tag workaround re-runs (#47).
+- Replace the app instance (replace, don't repair): `terraform plan -replace=aws_instance.app -out tfplan`, read it, `terraform apply tfplan`.
+- Check that a new instance trusts the Terraform key: `ssh -i ~/.ssh/shortify-real -p "$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://')" -o BatchMode=yes root@127.0.0.1 'ssh-keygen -lf /root/.ssh/authorized_keys'` must print exactly one line, with the same fingerprint as `ssh-keygen -lf ~/.ssh/shortify-real.pub`.
 - Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
 - Debug the API calls: `TF_LOG=DEBUG TF_LOG_PATH=tf-debug.log terraform apply tfplan` (delete the log afterwards).
 - Check that no default allow-all egress rule survived:
