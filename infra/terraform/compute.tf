@@ -10,11 +10,26 @@ resource "aws_instance" "app" {
   vpc_security_group_ids = [aws_security_group.app.id]
   key_name               = aws_key_pair.admin.key_name
 
+  # IMDSv2 only (edge case #49): users submit arbitrary URLs, so a future SSRF bug
+  # must not turn into stolen instance credentials with a plain GET. Hop limit 1
+  # keeps the token on the instance itself (not reachable through a Docker bridge).
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
   tags = {
     Name = "shortify-app"
   }
 
   lifecycle {
     replace_triggered_by = [aws_key_pair.admin]
+
+    # Verify the effect, not the request (edge cases #36, #43).
+    postcondition {
+      condition     = self.metadata_options[0].http_tokens == "required"
+      error_message = "IMDSv2 is not required on the app instance: the API did not store http_tokens = required."
+    }
   }
 }

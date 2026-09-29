@@ -66,7 +66,7 @@ The Terraform-built ALB (`shortify-alb`, listener 80 → target group `shortify-
 ## Instances
 
 **9. Only a fresh launch gives a working instance.** *(tested)*
-Floci's EC2 image (`ami-ubuntu2404-amd64`, which is plain `ubuntu:24.04`) runs `tail -f /dev/null` as PID 1. There's no systemd.
+Floci's EC2 image (`ami-ubuntu2404-amd64`, which is plain `ubuntu:24.04`) runs `tail -f /dev/null` as PID 1. There's no systemd. Floci adds packages at launch *(observed on 2.1.0)*: `/var/log/apt/history.log` on the Terraform-built instance shows `apt-get install iproute2 socat curl ca-certificates` (the IMDS proxy) and, 8 s later, `openssh-server openssh-client`, both on launch day. `python3` and `wget` are present without being installed by name (probably pulled in by openssh's recommended packages; unverified). Don't build on them: Ansible needs Python on the host, and here it's there by accident.
 
 | Action | What Floci does | Result |
 |---|---|---|
@@ -81,7 +81,7 @@ Recovery means replacing the instance. On real AWS a reboot restores sshd (syste
 The app is started with `nohup`, and any restart kills it, on AWS as well. The real fix (a systemd unit installed by UserData or Ansible) belongs to Phases 3–4. This is accepted for the manual phase.
 
 **25. `running` doesn't mean ready.** *(tested)*
-From Floci's logs: the container is `running` → 16 s later the key is injected → 34 s later sshd starts (along with the IMDS `socat` proxy). SSH right after the waiter returns fails with `Connection reset by peer`. The same holds on AWS: `running` only means the VM has started. Use `aws ec2 wait instance-status-ok` and retry SSH.
+From Floci's logs: the container is `running` → 16 s later the key is injected → 34 s later sshd starts (along with the IMDS `socat` proxy). The delay is most likely `apt-get` installing the IMDS proxy and then `openssh-server` (#9), so a Floci instance only gets sshd if it can reach an apt mirror. SSH right after the waiter returns fails with `Connection reset by peer`. The same holds on AWS: `running` only means the VM has started. Use `aws ec2 wait instance-status-ok` and retry SSH.
 
 **26. A Floci shutdown stops its instances.** *(observed)*
 During a Floci recreate, the instance container was SIGKILLed (`Exited (137)`) at 22:40:25, 9 seconds *before* the new Floci started at 22:40:34. So it was the old Floci stopping it on shutdown. An earlier recreate left the instance running only because that Floci had no Docker access. Afterwards, the API still reported `running`.
@@ -201,7 +201,12 @@ Tested with `-replace=aws_key_pair.admin`: a single apply ran `create-tags` with
 **48. `aws_instance` works on Floci from Terraform.** *(tested)*
 `aws_instance.app` (`ami-ubuntu2404-amd64`, `t3.micro`, `public-01`, the `app` SG, key pair `shortify-admin`) was created in 10 s, and the next `plan -detailed-exitcode` returned `0`: every attribute the provider reads back matched. The container was `Up` with SSH on host port 2200, sshd answered on the first try (the instance was already past the ~34 s delay, #25), and `/root/.ssh/authorized_keys` held exactly one key, whose fingerprint equals `ssh-keygen -lf` of the local `.pub`: Floci installs the Terraform key pair's key at launch. A login alone would only prove that *some* accepted key matches.
 The earlier `aws_instance` provider crash didn't reproduce with provider 6.66.0 and this minimal configuration. Its log was never kept, so it's unexplained, not fixed. The two `provider: plugin exited` lines in the debug log are the provider's normal shutdown; a crash shows `panic:` and a goroutine trace.
-Key rotation: `plan -replace=aws_key_pair.admin` planned the instance replacement `due to changes in replace_triggered_by` (3 to add, 3 to destroy; planned, not applied). Not set yet, each a separate test: IMDSv2 (`http_tokens = "required"`) and user data. Any Floci stop still kills the instance (#26): after a Floci restart, replace it with `-replace=aws_instance.app`. Whether a plan notices the dead instance by itself is untested.
+Key rotation: `plan -replace=aws_key_pair.admin` planned the instance replacement `due to changes in replace_triggered_by` (3 to add, 3 to destroy; planned, not applied). IMDSv2 is now required (#49); user data is not set yet. Any Floci stop still kills the instance (#26): after a Floci restart, replace it with `-replace=aws_instance.app`. Whether a plan notices the dead instance by itself is untested.
+
+**49. IMDSv2 on Floci 2.1.0: `required` is stored, tokens aren't checked.** *(tested)*
+`aws_instance.app` now has `metadata_options { http_tokens = "required", http_put_response_hop_limit = 1 }`: users submit arbitrary URLs, so a future SSRF bug must not be able to read instance credentials with a plain `GET`. It planned as an in-place update (`"optional" -> "required"`, no replacement) and `ModifyInstanceMetadataOptions` took 10 s. Verified at four levels: a postcondition fails the apply unless the provider reads back `required`; `describe-instances` reports `State: applied`, `HttpTokens: required`, hop limit `1`; the next `plan -detailed-exitcode` returned `0`; the container's `StartedAt` didn't change (no hidden restart, #9).
+From inside the instance, before and after the change, the token flow works (`PUT /latest/api/token` → `200` with a 32-character token, `GET` with it → `200` and the right ID). So do a tokenless `GET`, a made-up token, a random 32-hex token and a TTL of `0`: all `200`. Floci's docs say an unknown token gets `401`, a TTL outside 1–21600 gets `400`, and `HttpTokens=required` isn't enforced. The first two come from `fix(ec2): validate and expire IMDSv2 session tokens` (#4303), committed 2026-09-24; the running image is 2.1.0 (built 2026-09-15), still the latest release, and the docs site is built from `main`.
+Consequences: on Floci, a `200` with a token proves only that the endpoint exists, not that the client sent a valid token, which is why the test included a fake-token control. That a tokenless request is refused can only be validated on AWS (expected `401`; not verified here). No emulator flag: nothing breaks, and a workaround can't create enforcement. Running an unreleased image was rejected (not pinned, not reproducible); after the next release, re-run the fake-token and TTL checks with a written prediction.
 
 ---
 
@@ -229,6 +234,9 @@ Key rotation: `plan -replace=aws_key_pair.admin` planned the instance replacemen
 | RDS storage type | Always gp2 | As requested |
 | Key pair tags sent with `ImportKeyPair` | Dropped (`CreateTags` afterwards works) | Stored |
 | Key pair `KeyType` | Not returned (`null`) | `rsa` or `ed25519` |
+| IMDSv2 tokens (Floci 2.1.0) | Any token and any TTL accepted | Invalid token `401`, TTL outside 1–21600 `400` (per the docs) |
+| `HttpTokens=required` | Stored, not enforced (tokenless `GET` → `200`) | Tokenless requests refused |
+| Packages on a new instance | Floci installs the IMDS proxy and `openssh-server` with apt at launch | Whatever the AMI contains |
 
 ## Production notes
 

@@ -241,6 +241,12 @@ With an SSH tunnel: `ssh -L 8080:localhost:8000 …`, then `curl localhost:8080`
 **Why `--break-system-packages` with pip?**
 Ubuntu 24.04 blocks system-wide pip installs (PEP 668). It's acceptable on a throwaway host; a virtualenv is cleaner.
 
+**Why is IMDSv2 required on the app instance?**
+The instance metadata service (`169.254.169.254`) hands out, among other things, the temporary credentials of the instance's IAM role. With IMDSv1 one plain `GET` returns them, so a server-side request forgery (SSRF) bug, where the server can be made to fetch a URL an attacker chooses, is enough to steal them. A URL shortener is exactly the kind of app that grows "validate the link" or "fetch a preview" features. IMDSv2 first needs a `PUT` with a custom header to get a session token, which typical SSRF can't send, and a hop limit of 1 keeps the token from reaching anything one network hop further, such as a container behind a Docker bridge.
+
+**How is IMDSv2 verified if Floci doesn't enforce it?**
+Split what the emulator can prove from what it can't. Floci proves the setting is stored (API read-back, a clean plan, a postcondition) and that our token path runs; only AWS can prove a tokenless request is refused. Include a negative control: on Floci 2.1.0 a fake token also returns `200`, so a successful token request alone proves nothing about the token (edge case #49).
+
 ---
 
 ## Application Load Balancer
