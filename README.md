@@ -58,6 +58,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | SSH public key passed as a value, never a file path | The same code runs on a laptop and in the pipeline; nothing depends on one machine's filesystem |
 | AMI passed as a variable; a new key replaces the instance | The image is a release input, so shipping a version never means editing code; a rotated key can never leave the old one trusted on a running server |
 | IMDSv2 required on the instances | The app takes arbitrary URLs from users: a future SSRF bug must not turn into stolen cloud credentials |
+| Instances are registered by whoever launches them, never by Terraform | Only the release process knows when the new instance is healthy; two owners would let a routine infra change roll back a release |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 

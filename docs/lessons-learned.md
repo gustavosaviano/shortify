@@ -88,8 +88,9 @@ The same failure mode showed up in different places: a call reports success and 
 | Floci key pair import (Phase 4) | `Creation complete`; the next plan wants to add every tag | `plan -detailed-exitcode` right after the apply, then `describe-key-pairs` to rule out the provider |
 | The key pair tag workaround itself (Phase 4) | `Creation complete`, no error, but the check had iterated over an empty map and verified nothing | Reading the `Executing:` line: `--tags` was empty and the check lines were missing. Expected values now come from the configuration, and a precondition refuses an empty set |
 | Floci IMDS (Phase 4) | A `GET` with an IMDSv2 token returns `200`: the token flow "works" | A negative control written into the test: a made-up token also returned `200`. Floci 2.1.0 doesn't check tokens (edge case #49) |
+| The instance check itself (Phase 4) | `sshd no` for an instance we had just logged into: a false *negative* | A known-good run before hooking the check into `shortify_up`. `docker top -o comm` is rejected (Docker needs the PID column) and `2>/dev/null` hid the error; the check now matches the sshd listener's process title |
 
-**Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check.
+**Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check. Before anything relies on a check, run it on a known-good case and on a known-bad one.
 
 ## CI gate (Phase 3a)
 
@@ -132,6 +133,7 @@ The same failure mode showed up in different places: a call reports success and 
 | An instance that accepts the SSH login has the Terraform key | Login proves that *some* accepted key matches; comparing `ssh-keygen -lf /root/.ssh/authorized_keys` with the local `.pub` proves which (edge case #48) |
 | Floci's docs describe the Floci we run | The docs site is built from `main`: the IMDSv2 token validation it documents was committed 9 days after the 2.1.0 release we run (edge case #49). Compare the running version (`/_floci/health`) with the release history before trusting a documented behavior |
 | Floci's instances are bare `ubuntu:24.04`, so there's no `curl` or `python3` | The image is bare, but Floci installs the IMDS proxy and `openssh-server` at launch, and `python3` arrives as a side effect (edge case #9) |
+| A clean `terraform plan` means the instance is alive | Terraform sees only the API. After a PC restart Floci said `running` for a dead container and the plan was clean (edge case #48) |
 
 ---
 
@@ -178,5 +180,7 @@ The end-of-phase test round, run on a healthy baseline:
 16. What mounts `/mnt/e` a second time? Test: `findmnt /mnt/e` before and after one `docker run -v "$PWD":/src`.
 17. Does real AWS delete the RDS-managed secret together with the instance? (Floci leaves it behind: edge case #42.)
 18. After the next Floci release: does a fake IMDSv2 token get `401` and a TTL of `0` get `400` (fix #4303)? Is `HttpTokens=required` still unenforced? (Edge case #49.)
-19. After a Floci stop, does `terraform plan` notice the dead instance (exit `2`), or stay `0`? The answer likely depends on whether the API reports `terminated` or `running` (edge case #26). Test at a session start that follows a `docker compose stop`.
+19. *(Resolved: after a PC restart the API said `running` and the plan was clean, edge case #48.)* Still open: does a plan after `compose stop` (API `terminated`) show a create? And why does an abrupt stop leave `running` (question 2)?
 20. Where exactly do `python3` and `wget` come from on a Floci instance? (`apt-cache rdepends --installed python3`.)
+21. Does Floci's Auto Scaling launch real instance containers? It's listed among Floci's stateless services. Decides option B (pipeline-managed instances) vs C (Auto Scaling group with instance refresh) at the start of Phase 3b.
+22. `scripts/floci-instance-check.sh` with an exited container (the real after-restart case): expected `container exited, sshd no, API says running`, exit 1. Not yet exercised.

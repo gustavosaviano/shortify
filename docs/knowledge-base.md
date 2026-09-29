@@ -247,6 +247,15 @@ The instance metadata service (`169.254.169.254`) hands out, among other things,
 **How is IMDSv2 verified if Floci doesn't enforce it?**
 Split what the emulator can prove from what it can't. Floci proves the setting is stored (API read-back, a clean plan, a postcondition) and that our token path runs; only AWS can prove a tokenless request is refused. Include a negative control: on Floci 2.1.0 a fake token also returns `200`, so a successful token request alone proves nothing about the token (edge case #49).
 
+**Why isn't a clean `terraform plan` a health check?**
+Terraform compares the code and the state with what the API reports. If the API says `running` for a dead server, the plan is clean, and that happened here after a PC restart (edge case #48). The same is possible on AWS: an instance on a failed host can stay `running` while its status checks fail. Health comes from the service's own signals: EC2 status checks and ALB target health.
+
+**Why doesn't `shortify_up` replace a dead instance by itself?**
+A start helper must not change infrastructure behind your back (the silent `.bashrc` line, edge case #29), a replacement is a plan to read before applying, and an automatic replace would destroy a healthy instance whenever the helper runs twice. It detects and tells: `scripts/floci-instance-check.sh` checks what's actually true (the container and the sshd listener) and prints the replace command. In Phase 3b the replacement becomes the deploy itself.
+
+**Who registers instances in the target group?**
+Whoever launches them, never Terraform. In an immutable release the launcher is the only one who knows when the new instance is healthy and when the old one can be drained. If Terraform attached `aws_instance.app` and the pipeline replaced it, the next unrelated `terraform apply` would try to restore the old instance or its attachment: a routine infra change could roll back a release. Terraform owns what's stable (network, database, ALB, target group, later a launch template); the release process owns instances and their registration, either the Phase 3b pipeline or an Auto Scaling group with instance refresh (open question 21). Terraform's attachment resource also doesn't wait for the target to be healthy, so it can't gate a release.
+
 ---
 
 ## Application Load Balancer

@@ -43,7 +43,7 @@ Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. D
 ```bash
 cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
-shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
+shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
 RC
 source ~/.bashrc
 type shortify_up                            # prints the function
@@ -96,24 +96,37 @@ Host shortify-ec2
 
 ---
 
-## 3. Start of session
+## 3. Start of session (also after a PC restart)
 
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
-shortify_up                                                                    # starts the stack and loads the IDs
+shortify_up                                                                    # starts the stack, loads the IDs, checks the instance
 docker exec floci-ui-floci-1 id                                               # must list the docker.sock gid
 docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # must print nothing
 ```
 
-**Baseline.** This must pass before any work or test:
+`shortify_up` ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
+
+**If the check says not usable, replace the instance** (replace, don't repair):
+
+```bash
+terraform -chdir=infra/terraform plan -replace=aws_instance.app -out tfplan     # read it: 1 to add, 1 to destroy
+terraform -chdir=infra/terraform apply tfplan && rm -f infra/terraform/tfplan
+source scripts/shortify-env.sh                                                  # the new INSTANCE_ID
+SSH_PORT=$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://'); ssh-keygen -R "[127.0.0.1]:$SSH_PORT"   # new host key, often the same port
+bash scripts/floci-instance-check.sh                                            # "usable" once sshd is up: ~25-35 s after launch (#25); re-run until then
+```
+
+Then check the key (section 9). The app itself is deployed separately (Phase 4: Ansible); until then the instance has no app and isn't registered in the target group.
+
+**Baseline, once the app is deployed and registered.** This must pass before any work or test:
 
 ```bash
 curl -s http://localhost/health
-psql -h localhost -p 7001 -U shortify -d shortify -c "select count(*) from links;"
 aws elbv2 describe-target-health --target-group-arn $TG_ARN --query 'TargetHealthDescriptions[].[Target.Id,Target.Port,TargetHealth.State]' --output text
 ```
 
-**Expect the app to be gone at every session start.** Any Floci shutdown, including a normal `docker compose stop`, stops its instance containers (edge case #26). The signature is `docker ps -a --filter name=floci-ec2` showing `Exited (137)`. The API then reports either `terminated` (after a stop/restart) or `running` (after a recreate). Either way, go to section 5. RDS comes back by itself, with its data.
+The database needs the password from Secrets Manager for `psql` (section 6).
 
 ## End of session
 
