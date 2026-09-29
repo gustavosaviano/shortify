@@ -341,6 +341,7 @@ terraform output
 - Rotate the admin key: generate a new key, update `ssh_public_key`, plan. The key pair is replaced (AWS can't update key material) and the instance with it (`replace_triggered_by`: keys are only installed at launch); on Floci the tag workaround re-runs (#47).
 - Replace the app instance (replace, don't repair): `terraform plan -replace=aws_instance.app -out tfplan`, read it, `terraform apply tfplan`.
 - Check that a new instance trusts the Terraform key: `ssh -i ~/.ssh/shortify-real -p "$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://')" -o BatchMode=yes root@127.0.0.1 'ssh-keygen -lf /root/.ssh/authorized_keys'` must print exactly one line, with the same fingerprint as `ssh-keygen -lf ~/.ssh/shortify-real.pub`.
+- Check that IMDSv2 is required: `aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].MetadataOptions.[State,HttpTokens]' --output text` must print `applied required`. On Floci a tokenless request still succeeds (edge case #49); that part is only checked on AWS.
 - Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
 - Debug the API calls: `TF_LOG=DEBUG TF_LOG_PATH=tf-debug.log terraform apply tfplan` (delete the log afterwards).
 - Check that no default allow-all egress rule survived:

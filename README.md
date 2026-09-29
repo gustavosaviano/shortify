@@ -57,6 +57,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | RDS password managed by RDS in Secrets Manager; two layers of deletion protection | Credentials never touch code, plans or state; the click history can't be deleted by one mistaken command |
 | SSH public key passed as a value, never a file path | The same code runs on a laptop and in the pipeline; nothing depends on one machine's filesystem |
 | AMI passed as a variable; a new key replaces the instance | The image is a release input, so shipping a version never means editing code; a rotated key can never leave the old one trusted on a running server |
+| IMDSv2 required on the instances | The app takes arbitrary URLs from users: a future SSRF bug must not turn into stolen cloud credentials |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 
@@ -69,7 +70,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair and app instance done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance and IMDSv2 done |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
