@@ -89,6 +89,7 @@ The same failure mode showed up in different places: a call reports success and 
 | The key pair tag workaround itself (Phase 4) | `Creation complete`, no error, but the check had iterated over an empty map and verified nothing | Reading the `Executing:` line: `--tags` was empty and the check lines were missing. Expected values now come from the configuration, and a precondition refuses an empty set |
 | Floci IMDS (Phase 4) | A `GET` with an IMDSv2 token returns `200`: the token flow "works" | A negative control written into the test: a made-up token also returned `200`. Floci 2.1.0 doesn't check tokens (edge case #49) |
 | The instance check itself (Phase 4) | `sshd no` for an instance we had just logged into: a false *negative* | A known-good run before hooking the check into `shortify_up`. `docker top -o comm` is rejected (Docker needs the PID column) and `2>/dev/null` hid the error; the check now matches the sshd listener's process title |
+| Floci instance-profile tags (Phase 4) | `Modifications complete` and `tag-instance-profile` exit `0`; the next plan still wanted the tags | `plan -detailed-exitcode` after the apply, then `get-instance-profile` (`Tags: null`) and `ListInstanceProfileTags` (`UnsupportedOperation`) (edge case #51) |
 
 **Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check. Before anything relies on a check, run it on a known-good case and on a known-bad one.
 
@@ -134,6 +135,7 @@ The same failure mode showed up in different places: a call reports success and 
 | Floci's docs describe the Floci we run | The docs site is built from `main`: the IMDSv2 token validation it documents was committed 9 days after the 2.1.0 release we run (edge case #49). Compare the running version (`/_floci/health`) with the release history before trusting a documented behavior |
 | Floci's instances are bare `ubuntu:24.04`, so there's no `curl` or `python3` | The image is bare, but Floci installs the IMDS proxy and `openssh-server` at launch, and `python3` arrives as a side effect (edge case #9) |
 | A clean `terraform plan` means the instance is alive | Terraform sees only the API. After a PC restart Floci said `running` for a dead container and the plan was clean (edge case #48) |
+| A `fix(...)` commit after our release means the feature is missing in it | Floci 2.1.0 already issued role credentials through IMDS, although a fix for exactly that came later (edge case #51). A commit title is a claim about a change, not about what the release lacks: test the release |
 
 ---
 
@@ -183,4 +185,4 @@ The end-of-phase test round, run on a healthy baseline:
 19. *(Resolved: after a PC restart the API said `running` and the plan was clean, edge case #48.)* Still open: does a plan after `compose stop` (API `terminated`) show a create? And why does an abrupt stop leave `running` (question 2)?
 20. Where exactly do `python3` and `wget` come from on a Floci instance? (`apt-cache rdepends --installed python3`.)
 21. Does Floci's Auto Scaling launch real instance containers? It's listed among Floci's stateless services. Decides option B (pipeline-managed instances) vs C (Auto Scaling group with instance refresh) at the start of Phase 3b.
-22. `scripts/floci-instance-check.sh` with an exited container (the real after-restart case): expected `container exited, sshd no, API says running`, exit 1. Not yet exercised.
+22. *(Resolved 2026-10-01: after an overnight restart the check reported `container exited, sshd no`, exit 1, with the API saying `pending`, edge case #26.)*

@@ -9,6 +9,7 @@ resource "aws_instance" "app" {
   subnet_id              = aws_subnet.this["public-01"].id
   vpc_security_group_ids = [aws_security_group.app.id]
   key_name               = aws_key_pair.admin.key_name
+  iam_instance_profile   = aws_iam_instance_profile.app.name # reads the DB secret (iam.tf)
 
   # IMDSv2 only (edge case #49): users submit arbitrary URLs, so a future SSRF bug
   # must not turn into stolen instance credentials with a plain GET. Hop limit 1
