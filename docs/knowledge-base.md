@@ -256,6 +256,15 @@ A start helper must not change infrastructure behind your back (the silent `.bas
 **Who registers instances in the target group?**
 Whoever launches them, never Terraform. In an immutable release the launcher is the only one who knows when the new instance is healthy and when the old one can be drained. If Terraform attached `aws_instance.app` and the pipeline replaced it, the next unrelated `terraform apply` would try to restore the old instance or its attachment: a routine infra change could roll back a release. Terraform owns what's stable (network, database, ALB, target group, later a launch template); the release process owns instances and their registration, either the Phase 3b pipeline or an Auto Scaling group with instance refresh (open question 21). Terraform's attachment resource also doesn't wait for the target to be healthy, so it can't gate a release.
 
+**Why an IAM role and not access keys for the app?**
+A role gives the instance short-lived credentials through IMDSv2 that rotate by themselves; access keys would have to be stored on the host, where they never expire and can leak. The role's policy allows one action on one resource (`secretsmanager:GetSecretValue` on the database secret), so a compromised app can read its own database password and nothing else. EC2 can't take a role directly: it takes an instance profile that contains it.
+
+**Why is the database password read at start instead of written to the host?**
+The RDS-managed secret rotates, so any copy goes stale and the app would lose the database until the next deploy. Read at start through the credential chain, nothing sits on disk and a restart picks up the current password. Known gap: rotation while the app runs (new connections fail until it re-reads the secret; re-fetch on authentication failure is Phase 6).
+
+**Why `ignore_changes` on the instance profile's tags but a workaround for the key pair's?**
+A workaround must be able to make the change and verify it. Floci stores key pair tags added afterwards (`CreateTags`), so `terraform_data.key_pair_tags` can tag and check (edge case #47). It ignores instance-profile tags and can't list them, so nothing could work or verify itself (edge case #51); ignoring tag drift on that one resource is the smallest honest option.
+
 ---
 
 ## Application Load Balancer
