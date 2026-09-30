@@ -44,4 +44,8 @@ PY
 fi
 
 eval "$_shortify_exports"
+
+# Ansible ignores an ansible.cfg in a world-writable current directory, and on this laptop's
+# Windows drive every directory looks world-writable (edge cases #39, #50): point to it explicitly.
+export ANSIBLE_CONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/ansible" && pwd)/ansible.cfg"
 unset _shortify_tf _shortify_json _shortify_exports

@@ -1,0 +1,79 @@
+# Configures the Shortify app host. Same playbook for Floci and AWS; the inventory
+# carries the environment differences.
+- name: Configure the Shortify app host
+  hosts: app
+  gather_facts: false # facts need Python on the host, which the first task guarantees
+  vars:
+    app_root: /opt/shortify
+    app_user: shortify
+    repo_root: "{{ playbook_dir }}/../.."
+  tasks:
+    - name: Ensure Python is present (modules need it; never rely on the image, edge case #9)
+      ansible.builtin.raw: |
+        if [ -x /usr/bin/python3 ]; then echo present
+        else apt-get update -q && apt-get install -y -q python3 && echo installed; fi
+      register: python_bootstrap
+      changed_when: "'installed' in python_bootstrap.stdout"
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Install OS packages the app needs
+      ansible.builtin.apt:
+        name: [python3-venv]
+        update_cache: true
+        cache_valid_time: 3600
+
+    # ── The release: exactly the committed code, built on the laptop ──────────
+    - name: Read the commit to deploy
+      ansible.builtin.command: git -C "{{ repo_root }}" rev-parse HEAD
+      delegate_to: localhost
+      run_once: true
+      register: release_commit
+      changed_when: false
+
+    - name: Refuse uncommitted app changes (git archive would silently deploy the old code)
+      ansible.builtin.command: git -C "{{ repo_root }}" status --porcelain -- app requirements.txt
+      delegate_to: localhost
+      run_once: true
+      register: app_dirty
+      changed_when: false
+      failed_when: app_dirty.stdout != ""
+
+    - name: Package the release from git (git's file modes, no working-tree leftovers)
+      ansible.builtin.command: >-
+        git -C "{{ repo_root }}" -c tar.umask=0022 archive --format=tar.gz
+        -o /tmp/shortify-{{ release_commit.stdout }}.tar.gz {{ release_commit.stdout }} app requirements.txt
+      args:
+        creates: /tmp/shortify-{{ release_commit.stdout }}.tar.gz
+      delegate_to: localhost
+      run_once: true
+
+    # ── On the host ───────────────────────────────────────────────────────────
+    - name: Create the app user (no login; the app never runs as root)
+      ansible.builtin.user:
+        name: "{{ app_user }}"
+        system: true
+        shell: /usr/sbin/nologin
+        home: "{{ app_root }}"
+        create_home: false
+
+    - name: Create the release directory (root-owned, so the app can't rewrite its own code)
+      ansible.builtin.file:
+        path: "{{ app_root }}/releases/{{ release_commit.stdout }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Unpack the release
+      ansible.builtin.unarchive:
+        src: /tmp/shortify-{{ release_commit.stdout }}.tar.gz
+        dest: "{{ app_root }}/releases/{{ release_commit.stdout }}"
+        creates: "{{ app_root }}/releases/{{ release_commit.stdout }}/requirements.txt"
+
+    - name: Install the pinned dependencies in the release's own venv
+      ansible.builtin.pip:
+        requirements: "{{ app_root }}/releases/{{ release_commit.stdout }}/requirements.txt"
+        virtualenv: "{{ app_root }}/releases/{{ release_commit.stdout }}/venv"
+        virtualenv_command: python3 -m venv
