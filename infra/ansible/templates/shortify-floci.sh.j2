@@ -1,0 +1,33 @@
+#!/bin/sh
+# Managed by Ansible. Floci only (emulator_no_systemd): start/stop/status for the unit's
+# command without systemd. PID 1 in Floci's instance containers is `tail -f /dev/null`
+# (edge case #9), which never reaps exited children: a stopped app stays a zombie
+# (<defunct>) until the container goes. A zombie has released everything (port, memory),
+# so it counts as stopped here; start-stop-daemon would wait for it forever.
+set -eu
+PIDFILE=/run/shortify.pid
+alive() {   # the pidfile's process exists, runs as the app user, and isn't a zombie
+  pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+  # Compare fields, not text: a regex like '^user *[^Z]' lets [^Z] match the space and
+  # takes a zombie for a live process.
+  ps -o user=,stat= -p "$pid" 2>/dev/null | awk -v u='{{ app_user }}' '$1 == u && $2 !~ /^Z/ { ok = 1 } END { exit !ok }'
+}
+case "${1:-}" in
+  status) alive ;;
+  start)
+    if alive; then echo running; exit 0; fi
+    rm -f "$PIDFILE"
+    start-stop-daemon --start --background --make-pidfile --pidfile "$PIDFILE" \
+      --chuid {{ app_user }} --chdir {{ release_dir }} --startas /bin/sh -- \
+      -c 'set -a; . /etc/shortify/shortify.env; exec {{ app_command }} >> /var/log/shortify/app.log 2>&1'
+    echo started ;;
+  stop)
+    if ! alive; then rm -f "$PIDFILE"; echo "not running"; exit 0; fi
+    kill -TERM "$(cat "$PIDFILE")"
+    for _ in $(seq 1 20); do
+      if ! alive; then rm -f "$PIDFILE"; echo stopped; exit 0; fi
+      sleep 1
+    done
+    echo "the app did not stop within 20 s" >&2; exit 1 ;;
+  *) echo "usage: $0 start|stop|status" >&2; exit 2 ;;
+esac

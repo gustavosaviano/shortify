@@ -215,6 +215,27 @@ Consequences: on Floci, a `200` with a token proves only that the endpoint exist
 - **Enforcement is untested:** Floci accepts any credentials, so least privilege is validated on AWS only.
 Role credentials *do* work: with the profile attached, `iam/security-credentials/shortify-app` through IMDSv2 returned `AccessKeyId`, `SecretAccessKey`, `Token`, `Expiration` and `Code: Success`, although the commit `fix(ec2): issue instance-profile role credentials through IMDS` (#3742) came after 2.1.0 (a "fix" in the history doesn't mean the feature was absent). So the app uses the standard AWS credential chain on both; on Floci only the endpoint differs. The instance reaches Floci's API by container name (`http://floci-ui-floci-1:4566`, `/_floci/health` → `200`) over Floci's compose network `floci_default`, which the instance is also on. Floci itself was attached only to `floci_default`, not to the VPC network (compare #11): whether the ALB still reaches instances is checked at the first registration.
 
+## Ansible (Phase 4)
+
+**50. Ansible ignores `ansible.cfg` in a world-writable directory, and then deploys to nobody.** *(tested)*
+On the Windows drive every directory is `drwxrwxrwx` (#39). Ansible refuses a config file in a world-writable current directory (it warns, and `config file = None`); an explicit `ANSIBLE_CONFIG` loads it, so `scripts/shortify-env.sh` exports it. Relative paths inside it (`inventory`) resolve against the config file's directory: tested from `/tmp`. Without the config there is no inventory, the play matches no hosts, and `ansible-playbook` exits `0` with an empty recap: a deploy to nobody that "succeeds" (known-bad run with `ANSIBLE_CONFIG` unset). The playbook's first play now fails unless group `app` has hosts. The variable lives in the shell: a shell started on a branch whose `shortify-env.sh` lacks the export doesn't have it until the script is sourced again. CI and the pipeline clone onto a normal filesystem, where the current-directory lookup works.
+
+**52. Ansible 2.21 templating differs from older docs and habits.** *(tested)*
+- `lookup('ansible.builtin.env', 'X', default=Undefined)`, still shown in the docs, fails with `'Undefined' is undefined`; `default=undef(hint='...')` fails with the hint. The Floci inventory uses it for `INSTANCE_ID`.
+- The guard's first form, `groups.get('app', []) | length > 0`, evaluated to `false` once in the playbook while the inventory was loaded. The same expression later passed in an ad-hoc `debug`, an ad-hoc `assert` and a throwaway playbook: not reproduced, cause unknown. The guard uses `groups['app'] | default([]) | length > 0`, which passed every test.
+- Refuted: although every file on the Windows drive looks executable, Ansible didn't try to run `hosts.yml` as an inventory script, so no `enable_plugins` setting was added.
+- Play `vars` override inventory variables: a default for `emulator_no_systemd` in the play's `vars` would silently switch off the Floci inventory's `true`, so the default sits in each `when:` (`emulator_no_systemd | default(false)`).
+
+**53. No systemd on Floci's amd64 images: the playbook starts the unit's command itself.** *(tested)*
+Floci 2.1.0's only image with systemd is `ami-ubuntu2404-cloud-arm64` (its ID changed since #9 was written, and its metadata name equals the plain arm64 image). Rejected for parity: CI and the AWS target are amd64. The playbook installs the systemd unit on both; with `emulator_no_systemd: true` (Floci inventory only), `/usr/local/sbin/shortify-floci start|stop|status` runs the unit's exact command (`app_command`, defined once) as `shortify` with the same environment file, through `start-stop-daemon` (detach, pidfile, user, directory). Restart on crash and start on boot are validated on AWS only.
+Zombies: PID 1 in Floci's instance containers is `tail -f /dev/null`, which never reaps exited children, so a stopped app stays `<defunct>` until the container goes. `start-stop-daemon --stop` waits for the PID to vanish and fails (`refused to die`), and `--status` reports the zombie as running. The first redeploy failed that way and left the app down: the in-place deploy risk, on a disposable instance. The control script treats a zombie as stopped (it has released its port and memory) and requires the pidfile's process to belong to `shortify`, so a reused PID is never killed. Its first version used `grep '^shortify *[^Z]'`, which matches a zombie because `[^Z]` matches the space; it now compares `ps` fields with `awk`. Verified: a redeploy replaced the process (new PID, the new commit's release in `ps`, `/health` `200`), leaving one zombie per stopped process. Instances are replaced on every restart, so zombies never accumulate.
+
+**54. A release is `git archive` of the commit, and git's own umask applies.** *(tested)*
+The playbook packages `app/` and `requirements.txt` from `HEAD` on the laptop, refuses uncommitted changes in them (`git archive` would silently ship the old code), and unpacks into `/opt/shortify/releases/<commit>` with a venv per release. Code and venv are root-owned: `shortify` writing into them got `Permission denied`. `git archive` applies git's `tar.umask` (default `002`), so files came out `664` and directories `775`; `-c tar.umask=0022` makes the modes part of the command (`644`/`755` verified) instead of each machine's git config.
+
+**55. The API's RDS endpoint is reachable from instances on Floci.** *(tested)*
+`db_endpoint` is `172.19.0.2:7001`: Floci's own address on `floci_default` plus its proxy port. The instance, also on `floci_default`, reaches it (and `floci-ui-floci-1:7001`), so `DATABASE_HOST`/`DATABASE_PORT` come straight from Terraform on Floci and AWS alike. Only the laptop can't reach that address and uses `localhost` (#14). The app started with it and created the `links` table in the Terraform-built database.
+
 ---
 
 ## Floci vs real AWS
@@ -248,6 +269,8 @@ Role credentials *do* work: with the profile attached, `iam/security-credentials
 | Attach an instance profile to a running instance | `UnsupportedOperation` (replace the instance) | In place |
 | Instance-profile tags | Silently ignored; can't be read back | Stored |
 | Role credentials through IMDS | Issued (`Code: Success`) | Issued |
+| systemd | None on amd64 images; PID 1 is `tail`, which leaves zombies | PID 1: starts, restarts and reaps services |
+| RDS endpoint from an instance | Floci's proxy on `floci_default`, reachable | Private DNS name, port 5432 |
 
 ## Production notes
 

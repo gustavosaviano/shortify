@@ -90,8 +90,10 @@ The same failure mode showed up in different places: a call reports success and 
 | Floci IMDS (Phase 4) | A `GET` with an IMDSv2 token returns `200`: the token flow "works" | A negative control written into the test: a made-up token also returned `200`. Floci 2.1.0 doesn't check tokens (edge case #49) |
 | The instance check itself (Phase 4) | `sshd no` for an instance we had just logged into: a false *negative* | A known-good run before hooking the check into `shortify_up`. `docker top -o comm` is rejected (Docker needs the PID column) and `2>/dev/null` hid the error; the check now matches the sshd listener's process title |
 | Floci instance-profile tags (Phase 4) | `Modifications complete` and `tag-instance-profile` exit `0`; the next plan still wanted the tags | `plan -detailed-exitcode` after the apply, then `get-instance-profile` (`Tags: null`) and `ListInstanceProfileTags` (`UnsupportedOperation`) (edge case #51) |
+| `ansible-playbook` with no inventory (Phase 4) | Warnings, an empty recap, exit `0`: a deploy to nobody | A known-bad run with `ANSIBLE_CONFIG` unset after a play had matched no hosts; the playbook now fails without hosts (edge case #50) |
+| The Floci stop/status check (Phase 4) | A zombie counted as alive: `start` said `running` for a dead app, `stop` waited 20 s | Running the script by hand next to the raw `ps` output: the regex's `[^Z]` matched the space (edge case #53) |
 
-**Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check. Before anything relies on a check, run it on a known-good case and on a known-bad one.
+**Takeaway:** verify the effect, not the return code. A check compares against the intended value from the configuration, never against the resource's own read-back, and it must fail when it has nothing to check. Before anything relies on a check, run it on a known-good case and on a known-bad one. Compare parsed fields, not patterns over text.
 
 ## CI gate (Phase 3a)
 
@@ -136,6 +138,10 @@ The same failure mode showed up in different places: a call reports success and 
 | Floci's instances are bare `ubuntu:24.04`, so there's no `curl` or `python3` | The image is bare, but Floci installs the IMDS proxy and `openssh-server` at launch, and `python3` arrives as a side effect (edge case #9) |
 | A clean `terraform plan` means the instance is alive | Terraform sees only the API. After a PC restart Floci said `running` for a dead container and the plan was clean (edge case #48) |
 | A `fix(...)` commit after our release means the feature is missing in it | Floci 2.1.0 already issued role credentials through IMDS, although a fix for exactly that came later (edge case #51). A commit title is a claim about a change, not about what the release lacks: test the release |
+| `default=Undefined` makes an env lookup fail when the variable is missing | In ansible-core 2.21 that name doesn't exist; `undef(hint=...)` works (edge case #52) |
+| `git archive` ships git's recorded file modes | It applies `tar.umask` (default `002`): set it in the command (edge case #54) |
+| `start-stop-daemon --stop` works in any container | It waits for the PID to vanish; under a PID 1 that never reaps, a stopped process stays a zombie (edge case #53) |
+| `ANSIBLE_CONFIG` follows the branch you're on | It's a shell variable: a shell started on another branch lacks it until `shortify-env.sh` is sourced again (edge case #50) |
 
 ---
 
@@ -186,3 +192,5 @@ The end-of-phase test round, run on a healthy baseline:
 20. Where exactly do `python3` and `wget` come from on a Floci instance? (`apt-cache rdepends --installed python3`.)
 21. Does Floci's Auto Scaling launch real instance containers? It's listed among Floci's stateless services. Decides option B (pipeline-managed instances) vs C (Auto Scaling group with instance refresh) at the start of Phase 3b.
 22. *(Resolved 2026-10-01: after an overnight restart the check reported `container exited, sshd no`, exit 1, with the API saying `pending`, edge case #26.)*
+23. Why did `groups.get('app', [])` evaluate to `false` once in the playbook guard? Not reproduced (edge case #52).
+24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? Answered at the first target registration.
