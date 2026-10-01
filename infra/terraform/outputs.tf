@@ -27,6 +27,7 @@ output "db_endpoint" {
   value = {
     address = aws_db_instance.db.address
     port    = aws_db_instance.db.port
+    name    = aws_db_instance.db.db_name
   }
 }
 
@@ -48,4 +49,9 @@ output "target_group_arn" {
 output "instance_id" {
   description = "ID of the app instance. On Floci, SSH is on a host port: docker port floci-ec2-<id> 22/tcp (edge case #21)."
   value       = aws_instance.app.id
+}
+
+output "app_port" {
+  description = "Port the app listens on: the target group, the security groups and the systemd unit all use it."
+  value       = var.app_port
 }

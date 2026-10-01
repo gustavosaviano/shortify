@@ -1,0 +1,20 @@
+# Managed by Ansible (infra/ansible/app.yml). On Floci (no systemd, edge case #9) the
+# playbook runs the same ExecStart command itself; restart and boot behavior are AWS-only.
+[Unit]
+Description=Shortify URL shortener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ app_user }}
+Group={{ app_user }}
+EnvironmentFile=/etc/shortify/shortify.env
+WorkingDirectory={{ release_dir }}
+ExecStart={{ app_command }}
+# Back after a crash or a reboot without anyone logging in (the nohup deploy couldn't, #19).
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
