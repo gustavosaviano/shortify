@@ -17,6 +17,7 @@ Networking and AWS concepts that came up while building Phases 1–2, in questio
 - [Docker and local setup](#docker-and-local-setup)
 - [CI and GitHub Actions](#ci-and-github-actions)
 - [Terraform](#terraform)
+- [Ansible](#ansible)
 
 ---
 
@@ -434,3 +435,28 @@ In immutable deploys the image is a release input: every release is a new image,
 
 **How do I know a new instance trusts the right key?**
 A successful login only proves that some key in `authorized_keys` matches. Compare fingerprints: `ssh-keygen -lf /root/.ssh/authorized_keys` on the instance against `ssh-keygen -lf` of the local `.pub`, and check that there's exactly one entry.
+
+---
+
+## Ansible
+
+**What does Ansible do here, and what does Terraform do?**
+Terraform creates the cloud resources (network, database, instance, IAM); Ansible configures what runs on the instance (packages, the app user, the release, the environment, the systemd unit). Ansible is agentless: it connects over SSH and runs small Python modules, so the host needs only SSH and Python, which the playbook's first task guarantees with `raw`.
+
+**Why is Ansible installed in a venv from a requirements file?**
+`ansible-core` is a Python package. `infra/ansible/requirements.txt` pins it and every dependency (`pip freeze`), so the laptop, CI and the pipeline install identical versions. The venv (`~/.venvs/shortify-ansible`) is a disposable installation on the Linux filesystem, outside the repo (edge case #39).
+
+**Why an inventory per environment, and why is the SSH port derived?**
+The playbook targets `hosts: app`; the inventory says what `app` is. The Floci inventory holds Floci facts (`127.0.0.1`, `root`, the laptop's key, the endpoint URL); an AWS inventory will hold AWS facts. The port changes with instance replacements, so it's computed from `docker port floci-ec2-$INSTANCE_ID`, and a missing `INSTANCE_ID` fails with a hint instead of connecting somewhere wrong.
+
+**What makes a playbook idempotent, and why check it?**
+Modules describe a desired state and change only what differs, so a second run reports `changed=0`. Commands (`raw`, `command`, `shell`) need `changed_when` to report honestly. A playbook that always reports changes hides real drift in the noise.
+
+**Why is the release a `git archive` of the commit?**
+It ships exactly what's committed: no uncommitted edits, no `__pycache__`, no Windows-drive file modes. One directory per commit makes reruns idempotent and shows which version a host runs. The code is root-owned, so a compromised app can't rewrite it to persist.
+
+**Why does the playbook check `/health` itself?**
+Otherwise "the playbook succeeded" says nothing about whether the app runs. The app reads the secret and connects to the database at start, so a passing check proves the whole chain: role, IMDSv2, Secrets Manager, database, port.
+
+**Why does Floci need its own start script instead of systemd?**
+systemd can only manage services as PID 1. Floci's amd64 instances run `tail -f /dev/null` as PID 1, and the only systemd image is arm64 (rejected for parity). A supervisor such as `supervisord` would test its own configuration, not our unit. The script runs the unit's exact command as the same user with the same environment, and treats zombies as stopped (edge case #53). Restart and boot behavior are validated on AWS only.

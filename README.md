@@ -60,6 +60,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | IMDSv2 required on the instances | The app takes arbitrary URLs from users: a future SSRF bug must not turn into stolen cloud credentials |
 | Instances are registered by whoever launches them, never by Terraform | Only the release process knows when the new instance is healthy; two owners would let a routine infra change roll back a release |
 | The app reads its database password at start through an IAM role limited to that one secret | The RDS-managed secret rotates, so a copy on the host would break the app within days; a role leaves nothing on disk to leak |
+| Phase 5 on EKS rather than ECS | Floci emulates EKS, so Kubernetes can be built and tested at zero cost like everything else, and Kubernetes skills transfer across clouds. The cost on AWS: an hourly control-plane fee even when idle (pricing not verified here) |
 
 **Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
 
@@ -72,9 +73,9 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance and IMDSv2 done |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role done; Ansible deploy (release, environment, systemd unit, health check) working on Floci; ALB registration next |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
-| 5 | Containers: ECS Fargate or EKS, Secrets Manager | ⏳ |
+| 5 | Containers: EKS (Kubernetes), emulated by Floci | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
 
 ---
@@ -136,6 +137,7 @@ shortify/
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite, runs against real PostgreSQL
 ├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB, key pair and app instance as code
+├── infra/ansible/        # Phase 4: playbook (app.yml), Floci inventory, config and templates
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)
 ├── requirements.txt      # runtime dependencies (requirements-dev.txt: test and lint tools)

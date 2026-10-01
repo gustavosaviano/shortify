@@ -44,6 +44,7 @@ Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. D
 cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
 shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
+shortify_replace() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-replace-instance.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
 type shortify_up                            # prints the function
@@ -107,7 +108,7 @@ docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # 
 
 `shortify_up` ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
 
-**If the check says not usable, replace the instance** (replace, don't repair):
+**If the check says not usable, replace the instance** (replace, don't repair): run `shortify_replace` (`scripts/floci-replace-instance.sh`). It refuses any plan that does more than replace the instance, asks before applying, clears the host key, waits for sshd and checks the key, then the function re-sources the IDs (a script can't change its caller's variables). Then deploy (section 11). The commands it runs:
 
 ```bash
 terraform -chdir=infra/terraform plan -replace=aws_instance.app -out tfplan     # read it: 1 to add, 1 to destroy
@@ -375,3 +376,18 @@ sudo find data -mindepth 1 -delete          # empty the state, keep the folder a
 docker compose up -d
 aws ec2 describe-vpcs --query 'Vpcs[].[VpcId,IsDefault]' --output text   # only the default VPC
 ```
+
+## 11. Deploying the app with Ansible
+
+```bash
+python3 -m venv ~/.venvs/shortify-ansible && ~/.venvs/shortify-ansible/bin/pip install -r infra/ansible/requirements.txt   # once per machine
+A=~/.venvs/shortify-ansible/bin
+echo "$ANSIBLE_CONFIG"                        # must point at infra/ansible/ansible.cfg (shortify-env.sh sets it, edge case #50)
+$A/ansible app -m ansible.builtin.ping        # SSH and Python on the instance
+$A/ansible-playbook infra/ansible/app.yml     # deploys the committed code; a second run reports changed=0
+```
+
+- Commit first: the playbook deploys `HEAD` and refuses uncommitted changes in `app/` or `requirements.txt`.
+- The playbook fails if `/health` doesn't answer within 60 s. The app's log is `/var/log/shortify/app.log` on Floci (`journalctl -u shortify` on AWS).
+- A replaced instance has no app: run the playbook after `shortify_replace`.
+- On Floci, `/usr/local/sbin/shortify-floci status|stop|start` controls the app by hand (edge case #53).
