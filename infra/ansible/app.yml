@@ -153,14 +153,21 @@
         daemon_reload: true
       when: not (emulator_no_systemd | default(false))
 
-    - name: "Floci only: start the unit's command as the app user, detached"
-      ansible.builtin.shell: |
-        if start-stop-daemon --status --pidfile /run/shortify.pid; then echo running; else
-          start-stop-daemon --start --background --make-pidfile --pidfile /run/shortify.pid \
-            --chuid {{ app_user }} --chdir {{ release_dir }} --startas /bin/sh -- \
-            -c 'set -a; . /etc/shortify/shortify.env; exec {{ app_command }} >> /var/log/shortify/app.log 2>&1'
-          echo started
-        fi
+    - name: "Floci only: install the control script (same command, zombie-aware, edge case #9)"
+      ansible.builtin.template:
+        src: templates/shortify-floci.sh.j2
+        dest: /usr/local/sbin/shortify-floci
+        owner: root
+        group: root
+        mode: "0755"
+      when: emulator_no_systemd | default(false)
+      notify: Restart the app
+
+    - name: Apply the restart if the control script changed
+      ansible.builtin.meta: flush_handlers
+
+    - name: "Floci only: start the app if it isn't running"
+      ansible.builtin.command: /usr/local/sbin/shortify-floci start
       register: floci_start
       changed_when: "'started' in floci_start.stdout"
       when: emulator_no_systemd | default(false)
@@ -182,6 +189,8 @@
       when: not (emulator_no_systemd | default(false))
 
     - name: "Floci only: stop the running app so the start task launches the new one"
-      ansible.builtin.command: start-stop-daemon --stop --pidfile /run/shortify.pid --retry 10 --oknodo --remove-pidfile
+      ansible.builtin.command: /usr/local/sbin/shortify-floci stop
+      register: floci_stop
+      changed_when: "'stopped' in floci_stop.stdout"
       listen: Restart the app
       when: emulator_no_systemd | default(false)
