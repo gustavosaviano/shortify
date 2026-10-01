@@ -8,7 +8,9 @@ set -eu
 PIDFILE=/run/shortify.pid
 alive() {   # the pidfile's process exists, runs as the app user, and isn't a zombie
   pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
-  ps -o user=,stat= -p "$pid" 2>/dev/null | grep -q '^{{ app_user }} *[^Z]'
+  # Compare fields, not text: a regex like '^user *[^Z]' lets [^Z] match the space and
+  # takes a zombie for a live process.
+  ps -o user=,stat= -p "$pid" 2>/dev/null | awk -v u='{{ app_user }}' '$1 == u && $2 !~ /^Z/ { ok = 1 } END { exit !ok }'
 }
 case "${1:-}" in
   status) alive ;;
