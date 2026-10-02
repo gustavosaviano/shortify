@@ -175,7 +175,7 @@ The end-of-phase test round, run on a healthy baseline:
 
 1. Does Floci's enforcement flag filter instance-to-instance traffic, while leaving its own traffic and published SSH unfiltered? Test: two instances, with the rule revoked between them.
 2. Why does Floci report a stopped instance as `terminated` after a restart, but `running` after a recreate? (`compose stop` stopping instances is now confirmed.)
-3. Is there a durable fix for Floci's VPC network attachment after a recreate?
+3. Is there a durable fix for Floci's VPC network attachment after a recreate? *(Mitigated: `scripts/floci-network-check.sh` reconnects and verifies it at session start, edge case #11.)*
 4. Does real AWS reject `--targets Id=`? (Probably, with a validation error.)
 5. Does `restart: unless-stopped` let the stack recover by itself after a reboot?
 6. `down`/`up` behavior with the socket fix in place (deliberately not re-tested).
