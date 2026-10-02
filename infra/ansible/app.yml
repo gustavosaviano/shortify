@@ -133,6 +133,19 @@
         mode: "0755"
       when: emulator_no_systemd | default(false)
 
+    # Before anything can notify "Restart the app": its Floci handler runs this script,
+    # and on a fresh instance the first flush would call a file that doesn't exist yet
+    # (edge case #56).
+    - name: "Floci only: install the control script (same command, zombie-aware, edge case #9)"
+      ansible.builtin.template:
+        src: templates/shortify-floci.sh.j2
+        dest: /usr/local/sbin/shortify-floci
+        owner: root
+        group: root
+        mode: "0755"
+      when: emulator_no_systemd | default(false)
+      notify: Restart the app
+
     - name: Install the systemd unit (the reboot-safe fix for edge case #19)
       ansible.builtin.template:
         src: templates/shortify.service.j2
@@ -152,19 +165,6 @@
         state: started
         daemon_reload: true
       when: not (emulator_no_systemd | default(false))
-
-    - name: "Floci only: install the control script (same command, zombie-aware, edge case #9)"
-      ansible.builtin.template:
-        src: templates/shortify-floci.sh.j2
-        dest: /usr/local/sbin/shortify-floci
-        owner: root
-        group: root
-        mode: "0755"
-      when: emulator_no_systemd | default(false)
-      notify: Restart the app
-
-    - name: Apply the restart if the control script changed
-      ansible.builtin.meta: flush_handlers
 
     - name: "Floci only: start the app if it isn't running"
       ansible.builtin.command: /usr/local/sbin/shortify-floci start

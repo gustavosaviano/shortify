@@ -142,6 +142,8 @@ The same failure mode showed up in different places: a call reports success and 
 | `git archive` ships git's recorded file modes | It applies `tar.umask` (default `002`): set it in the command (edge case #54) |
 | `start-stop-daemon --stop` works in any container | It waits for the PID to vanish; under a PID 1 that never reaps, a stopped process stays a zombie (edge case #53) |
 | `ANSIBLE_CONFIG` follows the branch you're on | It's a shell variable: a shell started on another branch lacks it until `shortify-env.sh` is sourced again (edge case #50) |
+| A playbook that passes on rerun was a transient failure | The first run on a fresh instance failed deterministically: a handler called a script installed later; the rerun passed only because the script then existed (edge case #56). Reproduce on a fresh instance before calling anything flaky |
+| `ansible-playbook … \| tail -3 && next` stops on a failed play | The pipeline's exit status is `tail`'s, so `next` ran anyway. Send the output to a file and check `$?` (edge case #56) |
 
 ---
 
