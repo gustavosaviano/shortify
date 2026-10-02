@@ -384,7 +384,7 @@ python3 -m venv ~/.venvs/shortify-ansible && ~/.venvs/shortify-ansible/bin/pip i
 A=~/.venvs/shortify-ansible/bin
 echo "$ANSIBLE_CONFIG"                        # must point at infra/ansible/ansible.cfg (shortify-env.sh sets it, edge case #50)
 $A/ansible app -m ansible.builtin.ping        # SSH and Python on the instance
-$A/ansible-playbook infra/ansible/app.yml     # deploys the committed code; a second run reports changed=0
+$A/ansible-playbook infra/ansible/app.yml     # deploys the committed code; a second run for the same commit reports changed=0 (the first run after HEAD moves deploys a new release, even for a docs-only commit)
 ```
 
 - Commit first: the playbook deploys `HEAD` and refuses uncommitted changes in `app/` or `requirements.txt`.

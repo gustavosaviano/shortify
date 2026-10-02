@@ -193,4 +193,4 @@ The end-of-phase test round, run on a healthy baseline:
 21. Does Floci's Auto Scaling launch real instance containers? It's listed among Floci's stateless services. Decides option B (pipeline-managed instances) vs C (Auto Scaling group with instance refresh) at the start of Phase 3b.
 22. *(Resolved 2026-10-01: after an overnight restart the check reported `container exited, sshd no`, exit 1, with the API saying `pending`, edge case #26.)*
 23. Why did `groups.get('app', [])` evaluate to `false` once in the playbook guard? Not reproduced (edge case #52).
-24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? Answered at the first target registration.
+24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? *(Answered 2026-10-01: no. The ALB uses the private IP only; health checks timed out until Floci was connected to the VPC network, edge case #11.)*
