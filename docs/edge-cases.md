@@ -53,6 +53,7 @@ Each VPC is backed by a real Docker network (`floci-vpc-{account}-{region}-{vpc-
 - **Symptom:** target `unhealthy / Target.Timeout` while the app is fine; `curl` from inside Floci to the private IP exits `28`.
 - **Fix:** `docker network connect <vpc-network> floci-ui-floci-1` (loop in the runbook). The target turned healthy about 2 minutes later, consistent with a healthy threshold of 5 × 30 s.
 - **Durability:** the attachment survives `stop`/`start` but not a recreate. No durable fix is known.
+- **Re-confirmed on Floci 2.1.0** *(tested 2026-10-01)*: with Floci on `floci_default` only, the instance answered there (`172.19.0.6:8000` → `200`) but not on its private IP (`10.0.1.15` → exit `28`), and the registered target went `unhealthy / Target.Timeout`. The ALB forwards to the private IP only, even when another shared network would work. After `docker network connect`, Floci got `10.0.0.2` on the VPC network, the target turned `healthy` and `/health` through the ALB returned `200`.
 
 **20. `/health` is a shallow health check.**
 It doesn't touch the database, so the ALB keeps a target `healthy` even when RDS is down and `/shorten` fails. The app also fails at startup if RDS is unreachable, because `create_all()` runs on import. Phase 6: separate liveness from readiness.
@@ -61,7 +62,7 @@ It doesn't touch the database, so the ALB keeps a target `healthy` even when RDS
 `getent hosts $ALB_DNS` returns `::1`, listed under `localhost.floci.io`. It works because Docker publishes the listener ports on IPv6 too (`[::]:80`). On real AWS an ALB name resolves to several public IPs that change over time: point a Route 53 alias record at the name and never hardcode IPs.
 
 **46. ALB settings are stored; enforcement is untested.** *(tested)*
-The Terraform-built ALB (`shortify-alb`, listener 80 → target group `shortify-app`) took 61 s to create, while the target group and listener took about 1 s. The provider waits for `active`, so Floci appears to simulate provisioning. The next plan was clean, and `describe-load-balancer-attributes` / `describe-target-group-attributes` returned exactly what was requested: `routing.http.drop_invalid_header_fields.enabled true`, `deletion_protection.enabled false`, `deregistration_delay.timeout_seconds 30`. That was checked through the API because a clean plan alone could have been a false success (#43). Stored doesn't mean enforced: whether Floci really drops invalid headers or waits 30 s while draining is untested. Blue/green deploys (Phase 3b) will exercise the deregistration delay. With no targets, `http://localhost/` returns `503` with the plain-text body `No targets available`. After a full PC shutdown and `shortify_up`, the next plan was clean: the ALB, target group and listener were all restored.
+The Terraform-built ALB (`shortify-alb`, listener 80 → target group `shortify-app`) took 61 s to create, while the target group and listener took about 1 s. The provider waits for `active`, so Floci appears to simulate provisioning. The next plan was clean, and `describe-load-balancer-attributes` / `describe-target-group-attributes` returned exactly what was requested: `routing.http.drop_invalid_header_fields.enabled true`, `deletion_protection.enabled false`, `deregistration_delay.timeout_seconds 30`. That was checked through the API because a clean plan alone could have been a false success (#43). Stored doesn't mean enforced: whether Floci really drops invalid headers or waits 30 s while draining is untested. Blue/green deploys (Phase 3b) will exercise the deregistration delay. With no targets, `http://localhost/` returns `503` with the plain-text body `No targets available`. With a registered but unhealthy target, the body is `Service unavailable` *(tested 2026-10-01)*. The two bodies separate "nothing registered" (a release-process bug) from "registered but not healthy" (an app or network problem). After a full PC shutdown and `shortify_up`, the next plan was clean: the ALB, target group and listener were all restored.
 
 ## Instances
 
@@ -251,7 +252,7 @@ The playbook packages `app/` and `requirements.txt` from `HEAD` on the laptop, r
 | Instance after reboot/stop/start | Filesystem kept; no sshd or app | sshd back via systemd; hand-started app lost |
 | ALB → instance | Floci must be on the VPC Docker network | Native VPC routing |
 | ALB DNS name | Resolves to `::1` | Several public IPs that change |
-| ALB with no healthy targets | `503`, plain-text body `No targets available` | `503` with an HTML body (not verified here) |
+| ALB with no healthy targets | `503`, plain-text body `No targets available` (none registered) or `Service unavailable` (registered, unhealthy) | `503` with an HTML body (not verified here) |
 | Container IPs from the host | Not reachable (Docker Desktop) | N/A |
 | Default egress removal by Terraform | Revoke with ports 0/0 is ignored (workaround needed) | Removed |
 | Security group rule modification | Ignored (returns `true`, nothing changes) | Applied |
