@@ -40,6 +40,8 @@ A terminated, portless target stuck at `initial / Elb.RegistrationInProgress` di
 - **Deregister in the same form the target was registered.** `--targets Id=X,Port=8000` doesn't remove a target registered without a port. The call succeeds and removes nothing.
 - Check `describe-target-health` after every register or deregister.
 
+`scripts/release-register.sh` applies both rules: it deregisters each other target in the form `describe-target-health` reports it (with `Port`, or without when it shows `None`) and ends by checking that exactly the new instance is `healthy` and that `/health` answers through the ALB. On Floci 2.1.0 both `wait target-in-service` and `wait target-deregistered` work *(tested 2026-10-02)*: the cutover from a dead target to a new instance exited 0 and a rerun changed nothing. Its failure paths (the new instance never healthy, a deregister that changes nothing, the ALB not answering) are tested against a fake AWS CLI only: on Floci the in-service waiter takes about 10 minutes to give up.
+
 **8. `Port` is optional at registration.** *(tested)*
 A portless registration falls back to the target group's port (8000) and goes `healthy`, as on AWS. `Target.Port: None` means "not set explicitly". Passing `Port=8000` is still good hygiene because it makes deregistration predictable. Two reason codes worth knowing:
 - `Elb.InitialHealthChecking`: a new target, checks in progress. Allow about 5 passes × 30 s.
