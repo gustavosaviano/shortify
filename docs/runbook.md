@@ -385,6 +385,7 @@ A=~/.venvs/shortify-ansible/bin
 echo "$ANSIBLE_CONFIG"                        # must point at infra/ansible/ansible.cfg (shortify-env.sh sets it, edge case #50)
 $A/ansible app -m ansible.builtin.ping        # SSH and Python on the instance
 $A/ansible-playbook infra/ansible/app.yml     # deploys the committed code; a second run for the same commit reports changed=0 (the first run after HEAD moves deploys a new release, even for a docs-only commit)
+bash scripts/release-register.sh               # cutover: register the instance, wait until in service, deregister every other target, verify through the ALB
 ```
 
 - Commit first: the playbook deploys `HEAD` and refuses uncommitted changes in `app/` or `requirements.txt`.

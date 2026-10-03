@@ -297,6 +297,9 @@ A healthy threshold of 5 checks at 30-second intervals means about 2.5 minutes o
 **Why does `aws elbv2 wait target-in-service` look stuck?**
 Waiters print nothing while polling (by default every 15 s, for up to about 10 minutes). Silence means "not healthy yet".
 
+**Who registers instances in the target group, and in what order?**
+The release, never Terraform: target group membership is the release state (which version serves campaign links right now), and a Terraform attachment would undo every blue/green switch. `scripts/release-register.sh` registers the new instance, waits until it is in service, and only then deregisters every other target, whatever its state, so there is always a healthy target and a release never puts a `503` on a live link. If the new instance never becomes healthy, it is deregistered again and the old one keeps serving. It uses only the AWS CLI, so the same step runs on Floci, on AWS and in the Phase 3b pipeline.
+
 **Can the API be used from a browser?**
 `/health` and redirects work in a browser. `/shorten` is a POST, so use curl, DevTools `fetch`, or a REST client.
 
