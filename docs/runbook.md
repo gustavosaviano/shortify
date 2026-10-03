@@ -43,7 +43,7 @@ Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. D
 ```bash
 cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
-shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
+shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-network-check.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
 shortify_replace() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-replace-instance.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
@@ -106,7 +106,7 @@ docker exec floci-ui-floci-1 id                                               # 
 docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # must print nothing
 ```
 
-`shortify_up` ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
+`shortify_up` first runs `scripts/floci-network-check.sh`: if a Floci recreate dropped the container's attachment to the VPC network, it reconnects it, then verifies the attachment and fails if it's still missing (edge case #11). Unlike the instance check it repairs, because the fix is idempotent and destroys nothing, so there is no plan to read. It then ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
 
 **If the check says not usable, replace the instance** (replace, don't repair): run `shortify_replace` (`scripts/floci-replace-instance.sh`). It refuses any plan that does more than replace the instance, asks before applying, clears the host key, waits for sshd and checks the key, then the function re-sources the IDs (a script can't change its caller's variables). Then deploy (section 11). The commands it runs:
 
@@ -147,7 +147,7 @@ Any compose configuration change or a `down`/`up` recreates Floci. Two things fo
 - The new Floci must be reconnected to every VPC network. Otherwise the ALB can't reach any instance (health checks fail with `Target.Timeout`).
 
 ```bash
-for n in $(docker network ls --format '{{.Name}}' | grep '^floci-vpc-'); do docker network connect "$n" floci-ui-floci-1 2>/dev/null; done
+bash scripts/floci-network-check.sh        # reconnects Floci to the VPC network if needed, then verifies it (shortify_up runs it too)
 docker inspect floci-ui-floci-1 --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{$v.IPAddress}}{{"\n"}}{{end}}'
 ```
 
