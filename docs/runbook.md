@@ -106,7 +106,7 @@ Host shortify-ec2
 cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance (replace if dead: type yes) → deploy → cutover
 ```
 
-It runs five steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/5` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance and, if it isn't usable, replace it (the plan still needs your `yes`); deploy with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56); cut over with `scripts/release-register.sh`. The rest of this section describes the steps one by one, for when one fails.
+It runs five steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/5` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance and, if it isn't usable, replace it (the plan still needs your `yes`); deploy with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56); cut over with `scripts/release-register.sh`. Tested from a cold boot (2026-10-03, PC restart, Floci 2.1.0): the network stayed attached, the dead instance was replaced, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The rest of this section describes the steps one by one, for when one fails.
 
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
