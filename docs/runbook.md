@@ -45,6 +45,7 @@ cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
 shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-network-check.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
 shortify_replace() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-replace-instance.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
+shortify_session() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-session.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
 type shortify_up                            # prints the function
@@ -99,6 +100,14 @@ Host shortify-ec2
 
 ## 3. Start of session (also after a PC restart)
 
+**One command:** `shortify_session` (`scripts/floci-session.sh`) takes a cold boot to a healthy target behind the ALB.
+
+```bash
+cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance (replace if dead: type yes) → deploy → cutover
+```
+
+It runs five steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/5` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance and, if it isn't usable, replace it (the plan still needs your `yes`); deploy with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56); cut over with `scripts/release-register.sh`. Tested from a cold boot (2026-10-03, PC restart, Floci 2.1.0): the network stayed attached, the dead instance was replaced, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The rest of this section describes the steps one by one, for when one fails.
+
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
 shortify_up                                                                    # starts the stack, loads the IDs, checks the instance
@@ -118,7 +127,7 @@ SSH_PORT=$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://');
 bash scripts/floci-instance-check.sh                                            # "usable" once sshd is up: ~25-35 s after launch (#25); re-run until then
 ```
 
-Then check the key (section 9). The app itself is deployed separately (Phase 4: Ansible); until then the instance has no app and isn't registered in the target group.
+Then check the key (section 9), deploy (section 11) and cut over with `bash scripts/release-register.sh`: a replaced instance has no app and isn't registered in the target group until then.
 
 **Baseline, once the app is deployed and registered.** This must pass before any work or test:
 

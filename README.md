@@ -73,7 +73,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role done; Ansible deploy (release, environment, systemd unit, health check) working on Floci; ALB registration next |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role done; Ansible deploy (release, environment, systemd unit, health check), the release cutover behind the ALB and a one-command session start (`shortify_session`) working on Floci, tested from a cold boot |
 | 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
 | 5 | Containers: EKS (Kubernetes), emulated by Floci | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |

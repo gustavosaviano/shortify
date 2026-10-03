@@ -144,6 +144,7 @@ The same failure mode showed up in different places: a call reports success and 
 | `ANSIBLE_CONFIG` follows the branch you're on | It's a shell variable: a shell started on another branch lacks it until `shortify-env.sh` is sourced again (edge case #50) |
 | A playbook that passes on rerun was a transient failure | The first run on a fresh instance failed deterministically: a handler called a script installed later; the rerun passed only because the script then existed (edge case #56). Reproduce on a fresh instance before calling anything flaky |
 | `ansible-playbook … \| tail -3 && next` stops on a failed play | The pipeline's exit status is `tail`'s, so `next` ran anyway. Send the output to a file and check `$?` (edge case #56) |
+| A fresh instance's first deploy always reports `changed=11` | 11 or 12: packaging the release runs on the laptop and is skipped when its tarball is already in `/tmp`. Judge a deploy by `failed=0` and the health check, not by the count (edge case #56) |
 
 ---
 
@@ -168,6 +169,7 @@ The end-of-phase test round, run on a healthy baseline:
 | — | Why did the control instance die during a recreate? | The new flag | ✗ The old Floci's shutdown |
 | — | Does `http://localhost/` reach the ALB? | Yes | ✓ Yes |
 | Reboot | Stop the stack, restart Docker/WSL, recover by the runbook | Instance stopped; `group_add` holds; RDS back; network kept; API says `running` | ✓ ✓ ✓ ✓ ✗ (API said `terminated`) |
+| Cold boot | Restart the PC, then only `shortify_session` (Floci 2.1.0, 2026-10-03) | Network kept; dead instance replaced; first deploy passes (#56); one healthy target, `/health` 200; marker row and its `clicks` intact; unknown code `404` | ✓ ✓ ✓ ✓ ✓ ✓ (API said `pending`; `changed=12`, not about 11: the packaging ran too, #56) |
 
 ---
 
