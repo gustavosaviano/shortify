@@ -390,6 +390,12 @@ Setup dominates: a fresh VM, the `postgres:16` service and its health check, Pyt
 **How do I know a green result belongs to my latest push?**
 Match the run to the commit: `gh run list --branch <branch> --json headSha,status,conclusion` and compare `headSha` with `git rev-parse --short HEAD`. A summary taken seconds after a push may still describe the previous commit.
 
+**Why test the shell scripts against fake CLIs?**
+The `Test` job runs `pytest` against the app, so until 2026-10-04 a PR that only changed `scripts/` was green without anything checking the scripts. The release scripts are the zero-downtime promise, so they need a gate of their own: the `Scripts` job runs a pinned ShellCheck and `tests/scripts/run.sh`, which runs each real script against fake `aws`, `docker`, `ssh`, `terraform` and `ansible-playbook` commands and checks its exit code, output and calls. The fakes prove the scripts' logic (what's launched, deregistered, terminated, and when it stops); what Floci does is tested live and recorded in `edge-cases.md`.
+
+**How do we know those tests would catch a bug?**
+By breaking the code on purpose and watching a test fail (mutation testing). Five guarantees were broken one at a time, and each made the suite fail: skipping the IMDSv2 check, retiring the Terraform-managed instance, exporting `INSTANCE_ID` with two targets, repairing instead of releasing in the session, and cutting over without waiting for the new target. A test that can't fail proves nothing.
+
 ---
 
 ## Terraform

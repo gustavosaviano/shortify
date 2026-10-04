@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Fake Docker CLI: a running instance container with sshd listening, SSH on host port 2203.
+echo "docker $*" >> "$FAKE_LOG"
+case "$1" in
+  compose) exit 0 ;;
+  inspect) echo running ;;
+  top) echo "root 1 sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups" ;;
+  port) echo "0.0.0.0:2203" ;;
+  *) echo "fake docker: unexpected call: docker $*" >&2; exit 99 ;;
+esac

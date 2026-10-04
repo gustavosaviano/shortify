@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Fake AWS CLI for tests/scripts/run.sh: answers each call the scripts make from the FAKE_*
+# scenario variables and logs every call to $FAKE_LOG.
+echo "aws $*" >> "$FAKE_LOG"
+args="$*"
+case "$1 $2" in
+  "ec2 run-instances") echo i-new ;;
+  "ec2 wait"|"ec2 terminate-instances"|"elbv2 register-targets"|"elbv2 deregister-targets") exit 0 ;;
+  "elbv2 wait")
+    if [ "$3" = target-in-service ] && [ -n "${FAKE_NEVER_HEALTHY:-}" ]; then exit 255; fi ;;
+  "ec2 describe-instances")
+    if [[ "$args" == *MetadataOptions* ]]; then
+      printf '%s\t%s\t%s\n' "${FAKE_TOKENS:-required}" release "$FAKE_COMMIT"
+    elif [[ "$args" == *--instance-ids* ]]; then
+      echo running
+    else  # the retire listing: id, state, Project tag, ManagedBy tag
+      row() { printf '%s\t%s\t%s\t%s\n' "$@"; }
+      row i-new running shortify release
+      row i-tf running shortify terraform
+      row i-oldrel running shortify release
+      row i-failed stopped shortify release
+      row i-dead terminated shortify release
+      row i-other running None None
+    fi ;;
+  "elbv2 describe-target-groups") echo 8000 ;;
+  "elbv2 describe-target-health")
+    if [ -n "${FAKE_TG_FAIL:-}" ]; then exit 255
+    elif [[ "$args" == *"[].Target.Id"* ]]; then printf '%b' "${FAKE_TG_IDS-}"
+    elif [[ "$args" == *TargetHealth.Reason* ]]; then printf 'unhealthy\tTarget.Timeout\n'
+    elif [[ "$args" == *TargetHealth.State* ]]; then printf 'i-new\t8000\thealthy\n'
+    elif [ -f "$FAKE_STATE/registered" ]; then printf 'i-old\t8000\ni-new\t8000\n'
+    else printf 'i-old\t8000\n'; touch "$FAKE_STATE/registered"; fi ;;
+  *) echo "fake aws: unexpected call: aws $*" >&2; exit 99 ;;
+esac

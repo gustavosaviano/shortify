@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake curl: the ALB answers /health with 200.
+echo "curl $*" >> "$FAKE_LOG"
+echo 200

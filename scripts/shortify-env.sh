@@ -1,3 +1,4 @@
+# shellcheck shell=bash  # sourced, never executed, so it has no shebang
 # Session helper: exports the IDs the runbook uses, read from Terraform outputs.
 # Source it, don't run it:  source scripts/shortify-env.sh
 # Fails loudly and exports nothing if the state or any output is missing:
@@ -68,5 +69,9 @@ unset _shortify_ids _shortify_n
 
 # Ansible ignores an ansible.cfg in a world-writable current directory, and on this laptop's
 # Windows drive every directory looks world-writable (edge cases #39, #50): point to it explicitly.
-export ANSIBLE_CONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/ansible" && pwd)/ansible.cfg"
-unset _shortify_tf _shortify_json _shortify_exports
+if ! _shortify_ansible=$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/ansible" && pwd); then
+  echo "shortify-env: infra/ansible not found next to this script" >&2
+  unset _shortify_tf _shortify_json _shortify_exports _shortify_ansible; return 1
+fi
+export ANSIBLE_CONFIG="$_shortify_ansible/ansible.cfg"
+unset _shortify_tf _shortify_json _shortify_exports _shortify_ansible

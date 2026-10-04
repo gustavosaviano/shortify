@@ -106,7 +106,7 @@ Host shortify-ec2
 cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance → deploy + cutover, or a release if it's dead
 ```
 
-It runs four steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/4` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance the target group serves; then either deploy to it with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56) and confirm the cutover with `scripts/release-register.sh`, or, if it isn't usable or none is registered, replace it with a release (`scripts/release.sh`, section 5; no prompt: a release only launches one instance from the pinned template and verifies it). The cold boot of 2026-10-03 (PC restart, Floci 2.1.0) predates releases: the network stayed attached, the dead instance was replaced through Terraform, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The release path was tested with the serving instance stopped through the API (2026-10-04, edge case #61); a cold boot through it is open question 26. The rest of this section describes the steps one by one, for when one fails.
+It runs four steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/4` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance the target group serves; then either deploy to it with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56) and confirm the cutover with `scripts/release-register.sh`, or, if it isn't usable or none is registered, replace it with a release (`scripts/release.sh`, section 5; no prompt: a release only launches one instance from the pinned template and verifies it). The cold boot of 2026-10-03 (PC restart, Floci 2.1.0) predates releases: the network stayed attached, the dead instance was replaced through Terraform, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The release path was tested with the serving instance stopped through the API and from a real cold boot (2026-10-04, edge case #61). The rest of this section describes the steps one by one, for when one fails.
 
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
@@ -334,7 +334,9 @@ docker run --rm --network shortify_default \
 docker compose down
 ```
 
-Every change to `main` goes branch → pull request → green `Lint`, `Test` and `Terraform` → merge (enforced by the `protect-main` ruleset).
+The scripts have their own tests: `bash tests/scripts/run.sh` runs each script in `scripts/` against fake CLIs (`tests/scripts/fakes`), so it needs no AWS, Docker or SSH and runs the same on the laptop as in CI. Run it, and `shellcheck -x scripts/*.sh tests/scripts/run.sh tests/scripts/fakes/*` if ShellCheck is installed, before pushing a script change.
+
+Every change to `main` goes branch → pull request → green `Lint`, `Test`, `Terraform` and `Scripts` → merge (enforced by the `protect-main` ruleset).
 
 ## 9. Terraform workflow
 
