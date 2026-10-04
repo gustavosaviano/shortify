@@ -75,10 +75,10 @@ Shell variables die with the terminal. `scripts/shortify-env.sh` (in the repo) e
 
 ```bash
 source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh
-env | grep -E '^(VPC_ID|PUB[12]|ALB_SG|EC2_SG|RDS_SG|TG_ARN|ALB_DNS|DB_PORT|DB_SECRET|INSTANCE_ID)=' | sort   # 11 lines
+env | grep -E '^(VPC_ID|PUB[12]|ALB_SG|EC2_SG|RDS_SG|TG_ARN|ALB_DNS|DB_PORT|DB_SECRET|LT_ID|LT_VERSION|INSTANCE_ID)=' | sort   # 13 lines
 ```
 
-When `outputs.tf` gains or renames an output the runbook uses, update the script in the same PR. `INSTANCE_ID` comes from the `instance_id` output. The instance's SSH host port doesn't come from Terraform: `docker port floci-ec2-$INSTANCE_ID 22/tcp`.
+When `outputs.tf` gains or renames an output the runbook uses, update the script in the same PR. `INSTANCE_ID` is not a Terraform output: it's the one instance the target group serves, exported only when exactly one is registered (otherwise the script says why), because a release, not Terraform, launches it. `LT_ID` and `LT_VERSION` are the launch template and its pinned version. The instance's SSH host port doesn't come from Terraform: `docker port floci-ec2-$INSTANCE_ID 22/tcp`.
 
 Watch target health for 90 seconds:
 
@@ -103,10 +103,10 @@ Host shortify-ec2
 **One command:** `shortify_session` (`scripts/floci-session.sh`) takes a cold boot to a healthy target behind the ALB.
 
 ```bash
-cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance (replace if dead: type yes) → deploy → cutover
+cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance → deploy + cutover, or a release if it's dead
 ```
 
-It runs five steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/5` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance and, if it isn't usable, replace it (the plan still needs your `yes`); deploy with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56); cut over with `scripts/release-register.sh`. Tested from a cold boot (2026-10-03, PC restart, Floci 2.1.0): the network stayed attached, the dead instance was replaced, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The rest of this section describes the steps one by one, for when one fails.
+It runs four steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/4` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance the target group serves; then either deploy to it with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56) and confirm the cutover with `scripts/release-register.sh`, or, if it isn't usable or none is registered, replace it with a release (`scripts/release.sh`, section 5; no prompt: a release only launches one instance from the pinned template and verifies it). The cold boot of 2026-10-03 (PC restart, Floci 2.1.0) predates releases: the network stayed attached, the dead instance was replaced through Terraform, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The release path was tested with the serving instance stopped through the API (2026-10-04, edge case #61); a cold boot through it is open question 26. The rest of this section describes the steps one by one, for when one fails.
 
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
@@ -117,7 +117,7 @@ docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # 
 
 `shortify_up` first runs `scripts/floci-network-check.sh`: if a Floci recreate dropped the container's attachment to the VPC network, it reconnects it, then verifies the attachment and fails if it's still missing (edge case #11). Unlike the instance check it repairs, because the fix is idempotent and destroys nothing, so there is no plan to read. It then ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
 
-**If the check says not usable, replace the instance** (replace, don't repair): run `shortify_replace` (`scripts/floci-replace-instance.sh`). It refuses any plan that does more than replace the instance, asks before applying, clears the host key, waits for sshd and checks the key, then the function re-sources the IDs (a script can't change its caller's variables). Then deploy (section 11). The commands it runs:
+**If the check says not usable, a release replaces the instance** (replace, don't repair): `shortify_session`, or `bash scripts/release.sh ami-ubuntu2404-amd64` after `source scripts/shortify-env.sh` (section 5). `shortify_replace` (`scripts/floci-replace-instance.sh`, a Terraform `-replace` of `aws_instance.app`) is the Phase 4 path, kept until that resource leaves Terraform: since 2026-10-04 the target group serves a release instance, which it doesn't touch. What `shortify_replace` runs:
 
 ```bash
 terraform -chdir=infra/terraform plan -replace=aws_instance.app -out tfplan     # read it: 1 to add, 1 to destroy
@@ -164,7 +164,7 @@ docker inspect floci-ui-floci-1 --format '{{range $k,$v := .NetworkSettings.Netw
 
 ## 5. Replace the instance
 
-> **Phase 4:** the instance is now managed by Terraform. Replace it with `terraform plan -replace=aws_instance.app -out tfplan` (section 9). The CLI steps below are the manual Phase 2 path, kept until Ansible takes over the deploy.
+> **Phase 3b:** a release replaces the instance: `bash scripts/release.sh <image-id>` after `source scripts/shortify-env.sh` (on Floci the image is `ami-ubuntu2404-amd64`). It launches from the launch template at Terraform's pinned version with a `Release=<commit>` tag, verifies IMDSv2 and the tags on the instance, waits until it's usable and trusts exactly our key, deploys with Ansible, cuts over with `scripts/release-register.sh`, and terminates every other `ManagedBy=release` instance (edge case #61). A failure leaves the old instance serving and the new one running for inspection; the next successful release terminates it. One release at a time. The CLI steps below are the manual Phase 2 path.
 
 This is the recovery procedure: replace, don't repair.
 
@@ -399,5 +399,5 @@ bash scripts/release-register.sh               # cutover: register the instance,
 
 - Commit first: the playbook deploys `HEAD` and refuses uncommitted changes in `app/` or `requirements.txt`.
 - The playbook fails if `/health` doesn't answer within 60 s. The app's log is `/var/log/shortify/app.log` on Floci (`journalctl -u shortify` on AWS).
-- A replaced instance has no app: run the playbook after `shortify_replace`.
+- A release deploys the app itself; an instance replaced through `shortify_replace` has no app: run the playbook after it.
 - On Floci, `/usr/local/sbin/shortify-floci status|stop|start` controls the app by hand (edge case #53).

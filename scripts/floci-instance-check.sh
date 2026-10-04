@@ -20,5 +20,5 @@ if [ "$container" = running ] && [ "$sshd" = yes ]; then
   exit 0
 fi
 echo "instance $INSTANCE_ID is NOT usable: container $container, sshd $sshd, API says $api (edge cases #9, #26)" >&2
-echo "replace it: terraform -chdir=infra/terraform plan -replace=aws_instance.app -out tfplan (runbook section 9)" >&2
+echo "replace it with a release: shortify_session, or bash scripts/release.sh ami-ubuntu2404-amd64 (runbook section 3)" >&2
 exit 1
