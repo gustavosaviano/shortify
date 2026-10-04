@@ -138,7 +138,7 @@ shortify/
 ├── .github/workflows/    # CI: lint → test, plus terraform fmt/validate (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite, runs against real PostgreSQL
-├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB, key pair and app instance as code
+├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB, key pair, app instance and its launch template as code
 ├── infra/ansible/        # Phase 4: playbook (app.yml), Floci inventory, config and templates
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)

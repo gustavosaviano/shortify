@@ -451,6 +451,9 @@ Against the intended value from the configuration, never against the resource's 
 **Why is the AMI a variable instead of a constant?**
 In immutable deploys the image is a release input: every release is a new image, built and passed in by the pipeline (Phase 3b), so shipping a version never means editing code. It's also environment-specific: `ami-ubuntu2404-amd64` exists only on Floci, and AWS AMI IDs differ per region.
 
+**What does the launch template hold, and what does a release pass?**
+The template holds what stays the same between releases: instance type, key pair, security group, instance profile, IMDSv2 and the instances' tags (`ManagedBy = release`). A release passes what changes: the image (a release input, so shipping never means editing Terraform) and the subnet. It pins the template version from Terraform's output instead of `$Latest`, so every instance can be traced to the exact configuration that built it. Rotating the admin key keeps the key name, so the template doesn't change: only instances launched afterwards get the new key, which is why a rotation is followed by a release.
+
 **How do I know a new instance trusts the right key?**
 A successful login only proves that some key in `authorized_keys` matches. Compare fingerprints: `ssh-keygen -lf /root/.ssh/authorized_keys` on the instance against `ssh-keygen -lf` of the local `.pub`, and check that there's exactly one entry.
 
