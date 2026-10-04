@@ -109,7 +109,7 @@ An internet gateway. You create it, then attach it to the VPC. It isn't a Transi
 Route tables. The gateway is the door; a route to it is what lets a subnet use the door.
 
 **How many route tables does this design need?**
-One new table for the public subnets, with `0.0.0.0/0 → IGW`. Private subnets use the main table, which has only `10.0.0.0/16 → local`. Traffic between subnets is covered by that local route in every table. An explicit private table is safer, because adding an internet route to the main table would silently make every implicitly associated subnet public.
+Three: the main table, which has only `10.0.0.0/16 → local` and no subnet is associated with; a public table with `0.0.0.0/0 → IGW` for the public subnets; and an explicit private table, with only the local route, for the private subnets. Traffic between subnets is covered by the local route in every table. The private table is explicit because adding an internet route to the main table would silently make every implicitly associated subnet public (`network.tf`).
 
 **Why is `0.0.0.0/0` the *destination*?**
 In a route table, the destination is where the packet is going. `0.0.0.0/0 → IGW` means "anything outside the VPC goes out the front door".
@@ -219,7 +219,19 @@ ed25519 is a modern, compact key type. `.pem` is the format OpenSSH uses. `600` 
 The public key stays with AWS and is placed on the instance. Only the private half is downloaded.
 
 **Why is the app instance in a public subnet?**
-For direct SSH in this phase. The recommended pattern is private subnets behind the load balancer, which can reach private targets, with SSM or a bastion for access and a NAT gateway for outbound traffic.
+For direct SSH: Ansible deploys over SSH. The recommended pattern is private subnets behind the load balancer, which can reach private targets, with SSM for access and a NAT gateway or VPC endpoints for outbound traffic. Phase 3b designs that move together with the deploy.
+
+**Which parts of the system are private, and which would move?**
+RDS has been private since Phase 2 (private subnets, `publicly_accessible = false`). The ALB stays public: it's the front door. Only the app instance would move. Today it has a public IP, so one wrong security group rule would expose it; in a private subnet there is no inbound path from the internet at all, so a mistaken rule can't open one. That matters because the app host can read the database secret through its IAM role.
+
+**What is a NAT gateway for?**
+Outbound-only internet access for private subnets: connections started from inside go out and their replies come back, but nothing outside can start one. The private route table gets `0.0.0.0/0 → NAT gateway`. Two design points. The app tier needs its own private route table (with the NAT route), separate from the database tier (no internet route); otherwise the database subnets get an internet path they don't need. And a NAT gateway is either zonal (one per AZ, each in a public subnet) or, since November 2025, regional (one gateway that spans the AZs in use and needs no public subnet, billed per active AZ; from AWS's announcement, checked 2026-10-03). Either is a recurring charge (pricing not verified here). Whether Floci emulates NAT gateways is untested.
+
+**Do private instances always need a NAT gateway?**
+No: they need whatever their outbound traffic needs. If releases are baked images, packages are installed when the image is built, and a running instance only calls AWS APIs (Secrets Manager, SSM), which VPC endpoints can serve without any internet path. Endpoints have costs of their own. Phase 3b decides, because the deploy design determines what an instance downloads at boot.
+
+**What is SSM Session Manager?**
+Shell access without SSH. The SSM agent on the instance opens an outbound HTTPS connection to the Systems Manager service; you connect with `aws ssm start-session`, and IAM decides who may. No inbound port, no key pair, and every session is an audited API call. It needs the agent on the instance (believed preinstalled on Ubuntu's AMIs, not verified here), the `AmazonSSMManagedInstanceCore` policy on the instance role, and a network path to the SSM endpoints (NAT gateway or VPC endpoints). Here it would remove the port-22 rule, `admin_cidr` and the key pair. Ansible deploys over SSH, though, so it changes how a release reaches an instance: Ansible's SSM connection, or no configuration of running hosts at all (a baked image). Whether Floci emulates SSM sessions is untested.
 
 **Is a second instance in the other AZ needed?**
 For production redundancy, yes. For Phase 2, one instance is enough. The load balancer spans both AZs, so it stays available, and instances can be added later.

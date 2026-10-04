@@ -284,6 +284,6 @@ These are the changes a production deployment would add:
 
 - **RDS:** encryption at rest (`--storage-encrypted`), deletion protection, Multi-AZ.
 - **HTTPS:** an ACM certificate on a 443 listener, with a redirect action on the port-80 listener.
-- **Instance placement:** instances in private subnets, SSM Session Manager instead of SSH, and a NAT gateway for outbound traffic.
+- **Instance placement:** instances in a private app tier, SSM Session Manager instead of SSH, and a NAT gateway or VPC endpoints for outbound traffic (designed in Phase 3b).
 - **Least-privilege egress:** revoke the default allow-all egress rule. That's when the explicit ALB → EC2 egress rule starts to matter.
 - **Secrets:** move them to Secrets Manager.

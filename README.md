@@ -61,8 +61,9 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Instances are registered by whoever launches them, never by Terraform | Only the release process knows when the new instance is healthy; two owners would let a routine infra change roll back a release |
 | The app reads its database password at start through an IAM role limited to that one secret | The RDS-managed secret rotates, so a copy on the host would break the app within days; a role leaves nothing on disk to leak |
 | Phase 5 on EKS rather than ECS | Floci emulates EKS, so Kubernetes can be built and tested at zero cost like everything else, and Kubernetes skills transfer across clouds. The cost on AWS: an hourly control-plane fee even when idle (pricing not verified here) |
+| Private app tier designed in Phase 3b, not before | The launch template picks the subnet and the deploy mechanism decides the access path, so moving first would mean building it twice; a NAT gateway is a recurring charge, needed only if instances install packages at boot |
 
-**Known simplifications (planned for Phase 4):** EC2 sits in a public subnet for direct SSH. The production pattern is private subnets plus SSM or a bastion, with a NAT gateway for outbound traffic. Private subnets also use the main route table implicitly; an explicit private route table is safer.
+**Known simplifications (planned for Phase 3b):** the app instance sits in a public subnet so Ansible can deploy over SSH. The production pattern is a private app tier with SSM Session Manager instead of SSH, and outbound traffic through a NAT gateway or VPC endpoints. It's designed together with the deploy: the launch template picks the subnet, and how a release reaches an instance (Ansible over SSH or SSM, or a baked image) decides which outbound access it needs.
 
 ---
 
@@ -73,8 +74,8 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 1 | Local app with Docker Compose | ✅ Done |
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
-| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | 🔄 In progress: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role done; Ansible deploy (release, environment, systemd unit, health check), the release cutover behind the ALB and a one-command session start (`shortify_session`) working on Floci, tested from a cold boot |
-| 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure | ⏳ After Phase 4 |
+| 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | ✅ Done on Floci: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role; Ansible deploy (release, environment, systemd unit, health check), the release cutover behind the ALB and a one-command session start (`shortify_session`) working on Floci, tested from a cold boot |
+| 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure, with the app tier moved to private subnets (SSM access; NAT gateway or VPC endpoints) | ⏳ Next |
 | 5 | Containers: EKS (Kubernetes), emulated by Floci | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
 
