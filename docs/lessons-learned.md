@@ -148,6 +148,7 @@ The same failure mode showed up in different places: a call reports success and 
 | A playbook that passes on rerun was a transient failure | The first run on a fresh instance failed deterministically: a handler called a script installed later; the rerun passed only because the script then existed (edge case #56). Reproduce on a fresh instance before calling anything flaky |
 | `ansible-playbook … \| tail -3 && next` stops on a failed play | The pipeline's exit status is `tail`'s, so `next` ran anyway. Send the output to a file and check `$?` (edge case #56) |
 | A fresh instance's first deploy always reports `changed=11` | 11 or 12: packaging the release runs on the laptop and is skipped when its tarball is already in `/tmp`. Judge a deploy by `failed=0` and the health check, not by the count (edge case #56) |
+| The warm session path reports `changed=0` when the instance is healthy | Only when the instance already runs `main`'s commit. On 2026-10-04, after two merges, it reported `changed=8`: the packaging, a new release directory, its unpack and venv, a re-rendered unit and control script (both embed the release's full path, `release_dir` in `app.yml`), and a restart in place (a few seconds of possible 503, parked). The packaging task is delegated to localhost but counted under the app host in the recap, so `localhost changed=0` doesn't mean nothing was packaged. The old release directory stays on the instance; that only happens on the warm path, because a release replaces the instance |
 
 ---
 
