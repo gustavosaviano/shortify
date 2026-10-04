@@ -375,6 +375,9 @@ Build time: the artifact is labelled when it's made, from the same commit, and c
 **Mutable or immutable deploys?**
 Mutable updates instances in place (fast, but drift and port conflicts). Immutable replaces instances every release (no drift, easy rollback, zero downtime via blue/green). Containers (ECS/Kubernetes) are immutable by nature.
 
+**Why does the pipeline launch release instances instead of an Auto Scaling group?**
+An Auto Scaling group with an instance refresh is the standard AWS way to roll out a new launch template, and on AWS the refresh can launch the replacement before terminating the old instance. Floci's refresh terminates first (edge case #58), so the property the agency pays for, links that never go down during a release, couldn't be demonstrated. The pipeline already owns the cutover (`release-register.sh`), self-healing adds little for one instance, and Phase 5 replaces the instance layer with Kubernetes rolling updates.
+
 **Why did `Lint` and `Test` still run when `Terraform` failed?**
 Jobs in a workflow run in parallel unless one declares `needs:`. Only `Test` needs `Lint` (it starts a database, so a lint failure skips it). `Terraform` checks unrelated code, so it runs independently and one push shows every problem at once.
 
