@@ -44,7 +44,6 @@ Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. D
 cat >> ~/.bashrc << 'RC'
 eval "$(floci env)"
 shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-network-check.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
-shortify_replace() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-replace-instance.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 shortify_session() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-session.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
@@ -117,17 +116,7 @@ docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # 
 
 `shortify_up` first runs `scripts/floci-network-check.sh`: if a Floci recreate dropped the container's attachment to the VPC network, it reconnects it, then verifies the attachment and fails if it's still missing (edge case #11). Unlike the instance check it repairs, because the fix is idempotent and destroys nothing, so there is no plan to read. It then ends with `scripts/floci-instance-check.sh`, a read-only Floci check of the instance container and its sshd listener; its exit code says whether the session is ready. **Expect it to report the instance as not usable after any Floci stop or PC restart** (edge case #26). Nothing else will tell you: after a PC restart the API still said `running` and `terraform plan` was clean (#48). The platform (VPC, ALB, RDS with its data) comes back by itself; an instance never does (#9). The check detects and tells, it never replaces: replacing is a plan to read first.
 
-**If the check says not usable, a release replaces the instance** (replace, don't repair): `shortify_session`, or `bash scripts/release.sh ami-ubuntu2404-amd64` after `source scripts/shortify-env.sh` (section 5). `shortify_replace` (`scripts/floci-replace-instance.sh`, a Terraform `-replace` of `aws_instance.app`) is the Phase 4 path, kept until that resource leaves Terraform: since 2026-10-04 the target group serves a release instance, which it doesn't touch. What `shortify_replace` runs:
-
-```bash
-terraform -chdir=infra/terraform plan -replace=aws_instance.app -out tfplan     # read it: 1 to add, 1 to destroy
-terraform -chdir=infra/terraform apply tfplan && rm -f infra/terraform/tfplan
-source scripts/shortify-env.sh                                                  # the new INSTANCE_ID
-SSH_PORT=$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://'); ssh-keygen -R "[127.0.0.1]:$SSH_PORT"   # new host key, often the same port
-bash scripts/floci-instance-check.sh                                            # "usable" once sshd is up: ~25-35 s after launch (#25); re-run until then
-```
-
-Then check the key (section 9), deploy (section 11) and cut over with `bash scripts/release-register.sh`: a replaced instance has no app and isn't registered in the target group until then.
+**If the check says not usable, a release replaces the instance** (replace, don't repair): `shortify_session`, or `bash scripts/release.sh ami-ubuntu2404-amd64` after `source scripts/shortify-env.sh` (section 5). Terraform no longer manages an app instance (edge case #62), so there is nothing to `-replace`.
 
 **Baseline, once the app is deployed and registered.** This must pass before any work or test:
 
@@ -348,7 +337,6 @@ cat terraform.tfvars          # git-ignored; must contain:
 #   emulator_rds_unsupported_settings = true   # Floci only (edge case #43)
 #   emulator_key_pair_create_tags     = true   # Floci only (edge case #47)
 #   ssh_public_key                    = "ssh-ed25519 ..."   # contents of ~/.ssh/shortify-real.pub, never a path
-#   app_ami_id                        = "ami-ubuntu2404-amd64"   # Floci's AMI; on AWS the pipeline passes the image it built
 
 terraform fmt -check && terraform validate
 terraform plan -out tfplan    # read it; look for "forces replacement"
@@ -363,8 +351,8 @@ terraform output
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.
 - Recreate one resource on purpose: `terraform plan -replace=<address> -out tfplan`.
 - Set `ssh_public_key` without typing it: `printf 'ssh_public_key = "%s"\n' "$(cat ~/.ssh/shortify-real.pub)" >> terraform.tfvars`, then `terraform fmt terraform.tfvars` (an unformatted file makes `fmt -check` print it, admin IP included: edge case #37).
-- Rotate the admin key: generate a new key, update `ssh_public_key`, plan. The key pair is replaced (AWS can't update key material) and the instance with it (`replace_triggered_by`: keys are only installed at launch); on Floci the tag workaround re-runs (#47).
-- Replace the app instance (replace, don't repair): `terraform plan -replace=aws_instance.app -out tfplan`, read it, `terraform apply tfplan`.
+- Rotate the admin key: generate a new key, update `ssh_public_key`, plan and apply: the key pair is replaced (AWS can't update key material); on Floci the tag workaround re-runs (#47). Keys are only installed at launch, so then run a release (section 5): it launches an instance with the new key and retires the old one.
+- Replace the app instance: a release (section 5). Terraform no longer manages an app instance (edge case #62).
 - Check that a new instance trusts the Terraform key: `ssh -i ~/.ssh/shortify-real -p "$(docker port floci-ec2-$INSTANCE_ID 22/tcp | head -1 | sed 's/.*://')" -o BatchMode=yes root@127.0.0.1 'ssh-keygen -lf /root/.ssh/authorized_keys'` must print exactly one line, with the same fingerprint as `ssh-keygen -lf ~/.ssh/shortify-real.pub`.
 - Check that IMDSv2 is required: `aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[].Instances[].MetadataOptions.[State,HttpTokens]' --output text` must print `applied required`. On Floci a tokenless request still succeeds (edge case #49); that part is only checked on AWS.
 - Stop a running Terraform with **one** Ctrl+C; two can corrupt the state.
@@ -401,5 +389,5 @@ bash scripts/release-register.sh               # cutover: register the instance,
 
 - Commit first: the playbook deploys `HEAD` and refuses uncommitted changes in `app/` or `requirements.txt`.
 - The playbook fails if `/health` doesn't answer within 60 s. The app's log is `/var/log/shortify/app.log` on Floci (`journalctl -u shortify` on AWS).
-- A release deploys the app itself; an instance replaced through `shortify_replace` has no app: run the playbook after it.
+- A release deploys the app itself (section 5).
 - On Floci, `/usr/local/sbin/shortify-floci status|stop|start` controls the app by hand (edge case #53).

@@ -56,7 +56,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; fork pull requests need approval and can never reach the self-hosted deploy runner |
 | RDS password managed by RDS in Secrets Manager; two layers of deletion protection | Credentials never touch code, plans or state; the click history can't be deleted by one mistaken command |
 | SSH public key passed as a value, never a file path | The same code runs on a laptop and in the pipeline; nothing depends on one machine's filesystem |
-| AMI passed as a variable; a new key replaces the instance | The image is a release input, so shipping a version never means editing code; a rotated key can never leave the old one trusted on a running server |
+| Image passed at release time; a rotated key is followed by a release | The image is a release input, so shipping a version never means editing code; a release launches an instance with the new key and retires the old one, so the old key can't stay trusted on a running server |
 | IMDSv2 required on the instances | The app takes arbitrary URLs from users: a future SSRF bug must not turn into stolen cloud credentials |
 | Instances are registered by whoever launches them, never by Terraform | Only the release process knows when the new instance is healthy; two owners would let a routine infra change roll back a release |
 | The app reads its database password at start through an IAM role limited to that one secret | The RDS-managed secret rotates, so a copy on the host would break the app within days; a role leaves nothing on disk to leak |
@@ -76,7 +76,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | 2 | Manual deploy via AWS CLI: VPC, subnets, IGW, routes, SGs, RDS, EC2, ALB | ✅ Done and verified |
 | 3a | CI: tests against real PostgreSQL, lint, GitHub Actions gate, protected `main` | ✅ Done |
 | 4 | IaC: Terraform (cloud resources) + Ansible (instance configuration) | ✅ Done on Floci: network, security groups, RDS, ALB, key pair, app instance, IMDSv2 and the app's IAM role; Ansible deploy (release, environment, systemd unit, health check), the release cutover behind the ALB and a one-command session start (`shortify_session`) working on Floci, tested from a cold boot |
-| 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure, with the app tier moved to private subnets (SSM access; NAT gateway or VPC endpoints) | 🔄 In progress: releases launched by the pipeline (option B), decided from Floci's Auto Scaling tests (edge cases #57, #58); `scripts/release.sh` replaces the serving instance with zero failed requests (#61) |
+| 3b | CD: immutable blue/green deploys on the Terraform-managed infrastructure, with the app tier moved to private subnets (SSM access; NAT gateway or VPC endpoints) | 🔄 In progress: releases launched by the pipeline (option B), decided from Floci's Auto Scaling tests (edge cases #57, #58); `scripts/release.sh` replaces the serving instance with zero failed requests (#61); Terraform no longer manages an app instance (#62) |
 | 5 | Containers: EKS (Kubernetes), emulated by Floci | ⏳ |
 | 6 | Observability and security: CloudWatch, X-Ray, WAF | ⏳ |
 
@@ -138,7 +138,7 @@ shortify/
 ├── .github/workflows/    # CI: lint → test, terraform fmt/validate, shellcheck + script tests (GitHub-hosted runners)
 ├── app/                  # FastAPI app: routes, SQLAlchemy model, DB session
 ├── tests/                # pytest suite against real PostgreSQL; tests/scripts: the scripts against fake CLIs
-├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB, key pair, app instance and its launch template as code
+├── infra/terraform/      # Phase 4: network, security groups, RDS, ALB, key pair and the app's launch template as code
 ├── infra/ansible/        # Phase 4: playbook (app.yml), Floci inventory, config and templates
 ├── Dockerfile            # Multi-stage build, non-root user
 ├── docker-compose.yml    # Phase 1 local stack (app + Postgres)
