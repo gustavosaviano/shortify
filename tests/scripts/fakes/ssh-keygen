@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake ssh-keygen: -R succeeds, -lf prints the same fingerprint as the fake ssh.
+echo "ssh-keygen $*" >> "$FAKE_LOG"
+[ "$1" = -R ] && exit 0
+echo "256 SHA256:fake test@runner (ED25519)"

@@ -135,6 +135,7 @@ The same failure mode showed up in different places: a call reports success and 
 | An anchor check makes an edit script safe to re-run | It only proves the anchor exists. A block run twice inserted the `instance_id` output and `INSTANCE_ID` twice, and Python silently kept the last duplicate dict key. Edit scripts now also refuse when the new text is already present |
 | A `panic` count above 0 in a Terraform debug log means a crash | `provider: plugin exited` is the provider's normal shutdown; a crash shows `panic:` and a goroutine trace (edge case #48) |
 | An instance that accepts the SSH login has the Terraform key | Login proves that *some* accepted key matches; comparing `ssh-keygen -lf /root/.ssh/authorized_keys` with the local `.pub` proves which (edge case #48) |
+| A green CI means the PR's change was tested | `Test` runs `pytest`; the shell scripts of #21–#27 were checked only in a sandbox, where nobody could rerun the tests. Since 2026-10-04 the required `Scripts` job runs a pinned ShellCheck and 17 fake-CLI cases, each guarantee mutation-tested |
 | Floci's docs describe the Floci we run | The docs site is built from `main`: the IMDSv2 token validation it documents was committed 9 days after the 2.1.0 release we run (edge case #49). Compare the running version (`/_floci/health`) with the release history before trusting a documented behavior |
 | Floci's instances are bare `ubuntu:24.04`, so there's no `curl` or `python3` | The image is bare, but Floci installs the IMDS proxy and `openssh-server` at launch, and `python3` arrives as a side effect (edge case #9) |
 | A clean `terraform plan` means the instance is alive | Terraform sees only the API. After a PC restart Floci said `running` for a dead container and the plan was clean (edge case #48) |
@@ -173,6 +174,7 @@ The end-of-phase test round, run on a healthy baseline:
 | Cold boot | Restart the PC, then only `shortify_session` (Floci 2.1.0, 2026-10-03) | Network kept; dead instance replaced; first deploy passes (#56); one healthy target, `/health` 200; marker row and its `clicks` intact; unknown code `404` | ✓ ✓ ✓ ✓ ✓ ✓ (API said `pending`; `changed=12`, not about 11: the packaging ran too, #56) |
 | Release | Replace the serving instance with `scripts/release.sh` while sampling `/health` once a second (2026-10-04) | No failed sample; the old instance leaves only after the new one is healthy | ✓ 178 samples, 0 failed |
 | Cold path by release | Stop the serving instance through the API, then `shortify_session` | Not usable → a release; packaging skipped (`changed=11`); the stopped instance retired with its container | ✓ ✓ ✓ |
+| Cold boot by release | Restart the PC, then only `shortify_session` (2026-10-04) | Dead instance → a release; the dead one terminated; the old leftover container collected at the Floci start | ✓ ✓ ✓ |
 
 ---
 
@@ -201,5 +203,5 @@ The end-of-phase test round, run on a healthy baseline:
 22. *(Resolved 2026-10-01: after an overnight restart the check reported `container exited, sshd no`, exit 1, with the API saying `pending`, edge case #26.)*
 23. Why did `groups.get('app', [])` evaluate to `false` once in the playbook guard? Not reproduced (edge case #52).
 24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? *(Answered 2026-10-01: no. The ALB uses the private IP only; health checks timed out until Floci was connected to the VPC network, edge case #11.)*
-25. Does a Floci restart remove the exited container of an instance that was terminated after its container died (edge case #59)? Check at the next session start: `docker ps -a --filter name=floci-ec2`.
-26. Does `shortify_session` recover from a real cold boot through the release path? The cold boot of 2026-10-03 predates releases; the release path was tested with an instance stopped through the API (edge case #61).
+25. *(Answered 2026-10-04: yes. After a PC restart, the Floci start removed the leftover container of `i-99e01efdfd65d74a7`, terminated the day before (edge case #59).)*
+26. *(Answered 2026-10-04: yes. After a PC restart, `shortify_session` found the dead release instance not usable, replaced it by a release and terminated it: `session exit=0`, `/health` 200 (edge case #61).)*

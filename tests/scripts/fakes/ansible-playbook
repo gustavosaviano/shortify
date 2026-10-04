@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Fake ansible-playbook: a recap line, then exit $FAKE_DEPLOY_RC (0 by default).
+echo "ansible-playbook INSTANCE_ID=${INSTANCE_ID:-} $*" >> "$FAKE_LOG"
+echo "shortify-app               : ok=20   changed=12   unreachable=0    failed=0"
+if [ "${FAKE_DEPLOY_RC:-0}" != 0 ]; then echo "fatal: [shortify-app]: fake deploy failure"; fi
+exit "${FAKE_DEPLOY_RC:-0}"

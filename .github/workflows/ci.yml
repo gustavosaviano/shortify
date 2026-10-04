@@ -113,3 +113,29 @@ jobs:
 
       - name: Validate
         run: terraform validate
+
+  scripts:
+    name: Scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned and checksum-verified like everything else: the image ships its own,
+      # older ShellCheck, and a new version can add warnings with no code change.
+      - name: Install ShellCheck 0.11.0
+        run: |
+          curl -sSfL -o /tmp/shellcheck.tar.xz https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 755 /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version
+
+      - name: ShellCheck
+        run: shellcheck -x scripts/*.sh tests/scripts/run.sh tests/scripts/fakes/*
+
+      - name: Script tests (fake CLIs)
+        run: bash tests/scripts/run.sh

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Fake SSH: the instance's authorized_keys holds exactly the key the fake ssh-keygen reports.
+echo "ssh $*" >> "$FAKE_LOG"
+echo "256 SHA256:fake test@runner (ED25519)"
