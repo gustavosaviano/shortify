@@ -26,7 +26,8 @@ wanted = {
     "ALB_DNS":   lambda o: o["alb_dns_name"],
     "DB_PORT":   lambda o: o["db_endpoint"]["port"],   # connect to localhost (edge case #14)
     "DB_SECRET": lambda o: o["db_master_secret_arn"],
-    "INSTANCE_ID": lambda o: o["instance_id"],
+    "LT_ID":     lambda o: o["launch_template"]["id"],       # release instances launch from it
+    "LT_VERSION": lambda o: o["launch_template"]["version"], # pinned, never $Latest
 }
 lines = []
 for name, get in wanted.items():
@@ -44,6 +45,26 @@ PY
 fi
 
 eval "$_shortify_exports"
+
+# The app instance is whatever the target group serves: membership is the release state
+# (knowledge base, "who registers targets"), and since Phase 3b a release, not Terraform,
+# launches it. Exported only when exactly one instance is registered: mid-release or after
+# a failed cutover there can be two, and a guess must never reach a command (#22).
+# A stale value from an earlier source is cleared first.
+unset INSTANCE_ID
+if _shortify_ids=$(aws elbv2 describe-target-health --target-group-arn "$TG_ARN" \
+    --query 'TargetHealthDescriptions[].Target.Id' --output text 2>/dev/null); then
+  _shortify_ids=$(tr '\t' '\n' <<< "$_shortify_ids" | grep -vxE 'None|' | sort -u)
+  _shortify_n=$(grep -c . <<< "$_shortify_ids")
+  if [ "$_shortify_n" -eq 1 ]; then
+    export INSTANCE_ID="$_shortify_ids"
+  else
+    echo "shortify-env: INSTANCE_ID not set: $_shortify_n instances registered in the target group, expected 1" >&2
+  fi
+else
+  echo "shortify-env: INSTANCE_ID not set: can't read the target group" >&2
+fi
+unset _shortify_ids _shortify_n
 
 # Ansible ignores an ansible.cfg in a world-writable current directory, and on this laptop's
 # Windows drive every directory looks world-writable (edge cases #39, #50): point to it explicitly.

@@ -171,6 +171,8 @@ The end-of-phase test round, run on a healthy baseline:
 | — | Does `http://localhost/` reach the ALB? | Yes | ✓ Yes |
 | Reboot | Stop the stack, restart Docker/WSL, recover by the runbook | Instance stopped; `group_add` holds; RDS back; network kept; API says `running` | ✓ ✓ ✓ ✓ ✗ (API said `terminated`) |
 | Cold boot | Restart the PC, then only `shortify_session` (Floci 2.1.0, 2026-10-03) | Network kept; dead instance replaced; first deploy passes (#56); one healthy target, `/health` 200; marker row and its `clicks` intact; unknown code `404` | ✓ ✓ ✓ ✓ ✓ ✓ (API said `pending`; `changed=12`, not about 11: the packaging ran too, #56) |
+| Release | Replace the serving instance with `scripts/release.sh` while sampling `/health` once a second (2026-10-04) | No failed sample; the old instance leaves only after the new one is healthy | ✓ 178 samples, 0 failed |
+| Cold path by release | Stop the serving instance through the API, then `shortify_session` | Not usable → a release; packaging skipped (`changed=11`); the stopped instance retired with its container | ✓ ✓ ✓ |
 
 ---
 
@@ -200,3 +202,4 @@ The end-of-phase test round, run on a healthy baseline:
 23. Why did `groups.get('app', [])` evaluate to `false` once in the playbook guard? Not reproduced (edge case #52).
 24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? *(Answered 2026-10-01: no. The ALB uses the private IP only; health checks timed out until Floci was connected to the VPC network, edge case #11.)*
 25. Does a Floci restart remove the exited container of an instance that was terminated after its container died (edge case #59)? Check at the next session start: `docker ps -a --filter name=floci-ec2`.
+26. Does `shortify_session` recover from a real cold boot through the release path? The cold boot of 2026-10-03 predates releases; the release path was tested with an instance stopped through the API (edge case #61).

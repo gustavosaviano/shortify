@@ -454,6 +454,9 @@ In immutable deploys the image is a release input: every release is a new image,
 **What does the launch template hold, and what does a release pass?**
 The template holds what stays the same between releases: instance type, key pair, security group, instance profile, IMDSv2 and the instances' tags (`ManagedBy = release`). A release passes what changes: the image (a release input, so shipping never means editing Terraform) and the subnet. It pins the template version from Terraform's output instead of `$Latest`, so every instance can be traced to the exact configuration that built it. Rotating the admin key keeps the key name, so the template doesn't change: only instances launched afterwards get the new key, which is why a rotation is followed by a release.
 
+**How is a release shown to have zero downtime?**
+By measuring the effect instead of trusting the order of the steps: a loop requests `/health` through the ALB once a second for the whole release, and every sample must be `200`. The first release gave 178 samples, none failed (edge case #61). The order is what makes it possible: the old instance is deregistered only after the new one is in service, and the 30 s deregistration delay lets its in-flight requests finish.
+
 **How do I know a new instance trusts the right key?**
 A successful login only proves that some key in `authorized_keys` matches. Compare fingerprints: `ssh-keygen -lf /root/.ssh/authorized_keys` on the instance against `ssh-keygen -lf` of the local `.pub`, and check that there's exactly one entry.
 
