@@ -46,11 +46,6 @@ output "target_group_arn" {
   value       = aws_lb_target_group.app.arn
 }
 
-output "instance_id" {
-  description = "ID of the app instance. On Floci, SSH is on a host port: docker port floci-ec2-<id> 22/tcp (edge case #21)."
-  value       = aws_instance.app.id
-}
-
 output "app_port" {
   description = "Port the app listens on: the target group, the security groups and the systemd unit all use it."
   value       = var.app_port

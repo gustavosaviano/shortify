@@ -136,6 +136,7 @@ The same failure mode showed up in different places: a call reports success and 
 | A `panic` count above 0 in a Terraform debug log means a crash | `provider: plugin exited` is the provider's normal shutdown; a crash shows `panic:` and a goroutine trace (edge case #48) |
 | An instance that accepts the SSH login has the Terraform key | Login proves that *some* accepted key matches; comparing `ssh-keygen -lf /root/.ssh/authorized_keys` with the local `.pub` proves which (edge case #48) |
 | A green CI means the PR's change was tested | `Test` runs `pytest`; the shell scripts of #21–#27 were checked only in a sandbox, where nobody could rerun the tests. Since 2026-10-04 the required `Scripts` job runs a pinned ShellCheck and 17 fake-CLI cases, each guarantee mutation-tested |
+| A `grep` over a plan's text finds every planned action | A `removed` block's line is indented by one space, and `grep '^  # '` missed it; `terraform show -json tfplan` lists every change with its action (edge case #62) |
 | Floci's docs describe the Floci we run | The docs site is built from `main`: the IMDSv2 token validation it documents was committed 9 days after the 2.1.0 release we run (edge case #49). Compare the running version (`/_floci/health`) with the release history before trusting a documented behavior |
 | Floci's instances are bare `ubuntu:24.04`, so there's no `curl` or `python3` | The image is bare, but Floci installs the IMDS proxy and `openssh-server` at launch, and `python3` arrives as a side effect (edge case #9) |
 | A clean `terraform plan` means the instance is alive | Terraform sees only the API. After a PC restart Floci said `running` for a dead container and the plan was clean (edge case #48) |
@@ -175,6 +176,7 @@ The end-of-phase test round, run on a healthy baseline:
 | Release | Replace the serving instance with `scripts/release.sh` while sampling `/health` once a second (2026-10-04) | No failed sample; the old instance leaves only after the new one is healthy | ✓ 178 samples, 0 failed |
 | Cold path by release | Stop the serving instance through the API, then `shortify_session` | Not usable → a release; packaging skipped (`changed=11`); the stopped instance retired with its container | ✓ ✓ ✓ |
 | Cold boot by release | Restart the PC, then only `shortify_session` (2026-10-04) | Dead instance → a release; the dead one terminated; the old leftover container collected at the Floci start | ✓ ✓ ✓ |
+| Retire `aws_instance.app` | A `removed` block with `destroy = false`, applied behind a gate on the plan's JSON (2026-10-04) | Forgotten, not destroyed; then terminated through the API; every plan clean | ✓ ✓ ✓ |
 
 ---
 
