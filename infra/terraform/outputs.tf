@@ -55,3 +55,11 @@ output "app_port" {
   description = "Port the app listens on: the target group, the security groups and the systemd unit all use it."
   value       = var.app_port
 }
+
+output "launch_template" {
+  description = "Launch template the release process launches app instances from: its id and the version to pin, plus a release image and a subnet at launch (Phase 3b)."
+  value = {
+    id      = aws_launch_template.app.id
+    version = aws_launch_template.app.latest_version
+  }
+}
