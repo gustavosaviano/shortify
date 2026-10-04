@@ -90,6 +90,7 @@ The same failure mode showed up in different places: a call reports success and 
 | Floci IMDS (Phase 4) | A `GET` with an IMDSv2 token returns `200`: the token flow "works" | A negative control written into the test: a made-up token also returned `200`. Floci 2.1.0 doesn't check tokens (edge case #49) |
 | The instance check itself (Phase 4) | `sshd no` for an instance we had just logged into: a false *negative* | A known-good run before hooking the check into `shortify_up`. `docker top -o comm` is rejected (Docker needs the PID column) and `2>/dev/null` hid the error; the check now matches the sshd listener's process title |
 | Floci instance-profile tags (Phase 4) | `Modifications complete` and `tag-instance-profile` exit `0`; the next plan still wanted the tags | `plan -detailed-exitcode` after the apply, then `get-instance-profile` (`Tags: null`) and `ListInstanceProfileTags` (`UnsupportedOperation`) (edge case #51) |
+| Floci Auto Scaling launch (Phase 3b) | `InService`, the instance usable, every other setting as in the launch template; `HttpTokens` silently `optional` | Reading the instance next to the Terraform-launched one, a known-good control, instead of trusting the launch (edge case #57) |
 | `ansible-playbook` with no inventory (Phase 4) | Warnings, an empty recap, exit `0`: a deploy to nobody | A known-bad run with `ANSIBLE_CONFIG` unset after a play had matched no hosts; the playbook now fails without hosts (edge case #50) |
 | The Floci stop/status check (Phase 4) | A zombie counted as alive: `start` said `running` for a dead app, `stop` waited 20 s | Running the script by hand next to the raw `ps` output: the regex's `[^Z]` matched the space (edge case #53) |
 
@@ -194,7 +195,8 @@ The end-of-phase test round, run on a healthy baseline:
 18. After the next Floci release: does a fake IMDSv2 token get `401` and a TTL of `0` get `400` (fix #4303)? Is `HttpTokens=required` still unenforced? (Edge case #49.)
 19. *(Resolved: after a PC restart the API said `running` and the plan was clean, edge case #48.)* Still open: does a plan after `compose stop` (API `terminated`) show a create? And why does an abrupt stop leave `running` (question 2)?
 20. Where exactly do `python3` and `wget` come from on a Floci instance? (`apt-cache rdepends --installed python3`.)
-21. Does Floci's Auto Scaling launch real instance containers? It's listed among Floci's stateless services. Decides option B (pipeline-managed instances) vs C (Auto Scaling group with instance refresh) at the start of Phase 3b.
+21. *(Answered 2026-10-03: yes, from a launch template, but without its metadata options (edge case #57), and its instance refresh terminates before it launches (#58). Phase 3b uses option B: pipeline-launched instances.)*
 22. *(Resolved 2026-10-01: after an overnight restart the check reported `container exited, sshd no`, exit 1, with the API saying `pending`, edge case #26.)*
 23. Why did `groups.get('app', [])` evaluate to `false` once in the playbook guard? Not reproduced (edge case #52).
 24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? *(Answered 2026-10-01: no. The ALB uses the private IP only; health checks timed out until Floci was connected to the VPC network, edge case #11.)*
+25. Does a Floci restart remove the exited container of an instance that was terminated after its container died (edge case #59)? Check at the next session start: `docker ps -a --filter name=floci-ec2`.
