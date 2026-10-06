@@ -149,6 +149,12 @@ The same failure mode showed up in different places: a call reports success and 
 | `ansible-playbook … \| tail -3 && next` stops on a failed play | The pipeline's exit status is `tail`'s, so `next` ran anyway. Send the output to a file and check `$?` (edge case #56) |
 | A fresh instance's first deploy always reports `changed=11` | 11 or 12: packaging the release runs on the laptop and is skipped when its tarball is already in `/tmp`. Judge a deploy by `failed=0` and the health check, not by the count (edge case #56) |
 | The warm session path reports `changed=0` when the instance is healthy | Only when the instance already runs `main`'s commit. On 2026-10-04, after two merges, it reported `changed=8`: the packaging, a new release directory, its unpack and venv, a re-rendered unit and control script (both embed the release's full path, `release_dir` in `app.yml`), and a restart in place (a few seconds of possible 503, parked). The packaging task is delegated to localhost but counted under the app host in the recap, so `localhost changed=0` doesn't mean nothing was packaged. The old release directory stays on the instance; that only happens on the warm path, because a release replaces the instance |
+| `svc.sh` ships with the runner | `config.sh` generates it from `bin/systemd.svc.sh.template` when the runner is registered |
+| The laptop's WSL is Ubuntu 24.04 | It's Ubuntu 26.04 LTS. Without ICU, `Runner.Listener` aborts with exit 134; the runner's `bin/installdependencies.sh` found no `libicu80` or `libicu79` and installed `libicu78` (plus `liblttng-ust1t64`) |
+| A job on the runner sees none of the shell's `AWS_` variables | It inherits the environment of the shell that ran `./run.sh` (edge case #65) |
+| `gh run view --log \| cut -f3-` keeps the step name | Its fields are job, step and line; the step is field 2, so filter on `$2` before dropping it |
+| A PC restart keeps WSL's `/tmp` | It clears it: the release tarballs were gone, so the first deploy packages again (`changed=12`) |
+| Only `list-object-versions` breaks on the distro CLI | `list-objects-v2` breaks too: the control failed (edge case #66) |
 
 ---
 
@@ -208,3 +214,6 @@ The end-of-phase test round, run on a healthy baseline:
 24. Does the ALB reach instances while Floci is attached only to `floci_default`, not to the VPC network (edge case #51)? *(Answered 2026-10-01: no. The ALB uses the private IP only; health checks timed out until Floci was connected to the VPC network, edge case #11.)*
 25. *(Answered 2026-10-04: yes. After a PC restart, the Floci start removed the leftover container of `i-99e01efdfd65d74a7`, terminated the day before (edge case #59).)*
 26. *(Answered 2026-10-04: yes. After a PC restart, `shortify_session` found the dead release instance not usable, replaced it by a release and terminated it: `session exit=0`, `/health` 200 (edge case #61).)*
+27. Does GitHub support its runner on Ubuntu 26.04? (It runs, 2.337.0.)
+28. Why does the runner mask log lines containing `pwd=` (edge case #65)?
+29. Did both versions of the S3 canary survive the restarts (edge case #64)? Answerable once the CLI is fixed (#66).
