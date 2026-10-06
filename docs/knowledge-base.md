@@ -396,6 +396,15 @@ The `Test` job runs `pytest` against the app, so until 2026-10-04 a PR that only
 **How do we know those tests would catch a bug?**
 By breaking the code on purpose and watching a test fail (mutation testing). Five guarantees were broken one at a time, and each made the suite fail: skipping the IMDSv2 check, retiring the Terraform-managed instance, exporting `INSTANCE_ID` with two targets, repairing instead of releasing in the session, and cutting over without waiting for the new target. A test that can't fail proves nothing.
 
+**Why does the deploy runner live in a separate private repo?**
+GitHub advises using self-hosted runners only with private repositories: on a public one, anyone can open a pull request whose workflow runs on the runner, and labels don't stop it, since a fork's workflow can name the same labels. This runner's machine holds the Docker socket, Floci, the Terraform state and the SSH key. So the runner is registered only to the private `gustavosaviano/shortify-deploy`, and the public repo shows 0 runners. After the four checks pass on `main`, a job on a GitHub-hosted runner starts the deploy with `workflow_dispatch`, using a fine-grained token limited to that repo with Actions: write; `repository_dispatch` would need Contents: write, enough to push code. The deploy treats the commit it receives as untrusted and checks that it's `main`'s head with the four checks green before releasing it.
+
+**What does a `concurrency` group guarantee?**
+At most one running and one pending job per group in the repository; a newer pending run replaces the older pending one. With `cancel-in-progress: false`, a running release always finishes (cancelling one mid-cutover could leave two instances), and a burst of merges deploys only the newest. It covers only runs in that repository, not `shortify_session` on the laptop, so `release.sh` needs its own host lock (`flock`). A commit that's no longer `main`'s head is skipped as superseded, not failed.
+
+**Why keep the runner's automatic updates on?**
+GitHub stops queueing jobs to a self-hosted runner that falls more than 30 days behind a new runner version, or misses a critical security update. With updates off, deploys would one day stop on their own.
+
 ---
 
 ## Terraform
@@ -465,6 +474,9 @@ By measuring the effect instead of trusting the order of the steps: a loop reque
 
 **How do I know a new instance trusts the right key?**
 A successful login only proves that some key in `authorized_keys` matches. Compare fingerprints: `ssh-keygen -lf /root/.ssh/authorized_keys` on the instance against `ssh-keygen -lf` of the local `.pub`, and check that there's exactly one entry.
+
+**Why move the state to S3 before the deploy job?**
+A job checks the repo out in its own directory, where there's no `terraform.tfstate`, and copying the state would leave two copies to diverge. Remote state gives the laptop and the pipeline one copy, and `use_lockfile = true` (Terraform 1.10 and later) makes them take turns: the lock is an object created with a conditional write, which Floci implements (edge case #63) and keeps across restarts (#64). The backend block holds only the bucket, key, region and endpoint: HashiCorp warns that backend settings are copied into `.terraform` and into plan files, so credentials come from the environment. On real AWS the state bucket lives outside the infrastructure it describes, often in another account; here it lives in Floci, so losing `floci-ui/data` loses both together. Versioning and a kept copy of the local state mitigate that.
 
 ---
 

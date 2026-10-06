@@ -53,7 +53,7 @@ Security groups chain the tiers: internet → ALB SG → EC2 SG → RDS SG. Each
 | Local emulation (Floci) | Zero cloud cost while learning; gaps versus AWS are measured, not guessed |
 | Immutable deploys (replace instances every release) | No drift and no in-place port conflicts; the new version is healthy before the old one leaves, so campaign links never go down |
 | Terraform before the deploy pipeline | The pipeline reads resource IDs from Terraform outputs instead of hardcoding hand-made IDs |
-| Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; fork pull requests need approval and can never reach the self-hosted deploy runner |
+| Public repo, CI on GitHub runners, deploy only from protected `main` | Visible portfolio; the self-hosted deploy runner is registered only to a separate private repo, because GitHub advises self-hosted runners only for private repos, so no fork pull request can reach the machine that holds the keys to production |
 | RDS password managed by RDS in Secrets Manager; two layers of deletion protection | Credentials never touch code, plans or state; the click history can't be deleted by one mistaken command |
 | SSH public key passed as a value, never a file path | The same code runs on a laptop and in the pipeline; nothing depends on one machine's filesystem |
 | Image passed at release time; a rotated key is followed by a release | The image is a release input, so shipping a version never means editing code; a release launches an instance with the new key and retires the old one, so the old key can't stay trusted on a running server |

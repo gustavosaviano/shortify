@@ -105,7 +105,7 @@ Host shortify-ec2
 cd ~/workspace/shortify-phase1/shortify && shortify_session                  # stack → network → instance → deploy + cutover, or a release if it's dead
 ```
 
-It runs four steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/4` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance the target group serves; then either deploy to it with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56) and confirm the cutover with `scripts/release-register.sh`, or, if it isn't usable or none is registered, replace it with a release (`scripts/release.sh`, section 5; no prompt: a release only launches one instance from the pinned template and verifies it). The cold boot of 2026-10-03 (PC restart, Floci 2.1.0) predates releases: the network stayed attached, the dead instance was replaced through Terraform, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The release path was tested with the serving instance stopped through the API and from a real cold boot (2026-10-04, edge case #61). The rest of this section describes the steps one by one, for when one fails.
+It runs four steps, each only if the previous one succeeded, and a failure prints `session: FAILED at step N/4` and exits 1: start the stack; read the IDs and run the network check (#11); check the instance the target group serves; then either deploy to it with Ansible (output in a kept `/tmp/shortify-deploy.*.log`, judged by its exit code, #56) and confirm the cutover with `scripts/release-register.sh`, or, if it isn't usable or none is registered, replace it with a release (`scripts/release.sh`, section 5; no prompt: a release only launches one instance from the pinned template and verifies it). The cold boot of 2026-10-03 (PC restart, Floci 2.1.0) predates releases: the network stayed attached, the dead instance was replaced through Terraform, the first deploy passed, the cutover left one healthy target, and the database came back with its rows and counters (edge cases #26, #56). The release path was tested with the serving instance stopped through the API and from a real cold boot (2026-10-04, edge case #61). On the warm path, an instance that doesn't run `main`'s commit yet gets an in-place release: a new directory under `/opt/shortify/releases/`, a re-rendered unit (it embeds the release path) and a restart of the app, about 8 changed tasks with a few seconds of possible 503; only `changed=0` means it already ran `main` (2026-10-04). The rest of this section describes the steps one by one, for when one fails.
 
 ```bash
 cd ~/workspace/shortify-phase1/shortify                                        # repo root: the terraform -chdir commands are relative to it
@@ -391,3 +391,26 @@ bash scripts/release-register.sh               # cutover: register the instance,
 - The playbook fails if `/health` doesn't answer within 60 s. The app's log is `/var/log/shortify/app.log` on Floci (`journalctl -u shortify` on AWS).
 - A release deploys the app itself (section 5).
 - On Floci, `/usr/local/sbin/shortify-floci status|stop|start` controls the app by hand (edge case #53).
+
+## 12. Deploy runner (Phase 3b)
+
+A GitHub Actions self-hosted runner in WSL, registered only to the private repo `gustavosaviano/shortify-deploy` (knowledge base: why the deploy runner lives in a separate private repo). Version 2.337.0; GitHub updates it automatically.
+
+Install once. The SHA-256 is the one in the release notes, cross-checked against a download:
+
+    ( mkdir -p ~/actions-runner-shortify-deploy && cd ~/actions-runner-shortify-deploy && curl -fsSLo actions-runner-linux-x64-2.337.0.tar.gz https://github.com/actions/runner/releases/download/v2.337.0/actions-runner-linux-x64-2.337.0.tar.gz && echo "70920811a4f8ad4328818682bca5c6469c1c942fab52448868071d0063816613  actions-runner-linux-x64-2.337.0.tar.gz" | sha256sum -c && tar xzf actions-runner-linux-x64-2.337.0.tar.gz && sudo ./bin/installdependencies.sh && ./bin/Runner.Listener --version )
+
+`installdependencies.sh` installs ICU and the other .NET libraries with apt (on Ubuntu 26.04: `libicu78`, `liblttng-ust1t64`); without ICU the runner aborts with exit 134. Don't set `System.Globalization.Invariant` instead.
+
+Register once. The registration token is short-lived and never printed:
+
+    ( cd ~/actions-runner-shortify-deploy && token=$(gh api -X POST repos/gustavosaviano/shortify-deploy/actions/runners/registration-token --jq .token) && ./config.sh --unattended --url https://github.com/gustavosaviano/shortify-deploy --token "$token" --name wsl-shortify-deploy --labels shortify-deploy --work _work )
+
+The labels are `self-hosted,Linux,X64,shortify-deploy`, and jobs use `runs-on: [self-hosted, Linux, X64, shortify-deploy]`. `config.sh` also generates `svc.sh`. Not `--ephemeral`: only verified commits from `main` run there.
+
+Run it in its own terminal (foreground for now; how it starts is still to decide): `cd ~/actions-runner-shortify-deploy && ./run.sh`, until it prints `Listening for Jobs`. Check from GitHub's side:
+
+    gh api repos/gustavosaviano/shortify-deploy/actions/runners --jq '.runners[] | [.name, .status, .busy] | @tsv'
+    gh api repos/gustavosaviano/shortify/actions/runners --jq .total_count   # the public repo: must be 0
+
+A job inherits the environment of the shell that started the runner (edge case #65), so workflows declare their own `env:` and `PATH`. The read-only probe (`.github/workflows/probe.yml` in `shortify-deploy`, manual trigger only) prints what a job sees. Stop the runner with Ctrl+C.
