@@ -38,17 +38,16 @@ A few notes on these settings:
 - **`FLOCI_NETWORK_SECURITY_GROUP_ENFORCEMENT_ENABLED`:** it's still set to `"true"` from the enforcement test, but it has no observable effect on this machine. Remove it at the next Floci recreate (edge case #13).
 - **Only one Floci:** there must be exactly one Floci stack. An old standalone `~/workspace/floci` stack was still being started by `.bashrc`, and it had to be deleted (along with its `floci_floci-data` volume).
 
-Put only the AWS CLI configuration in `~/.bashrc`, plus a named start command. Don't auto-start the stack on every shell: a hidden start that silences its errors failed invisibly and started the wrong stack.
+Put only the named start commands in `~/.bashrc`. The AWS settings (Floci's endpoint, region and dummy credentials) come from `scripts/shortify-env.sh`, which both commands source, so they live in the repo and not in the shell's start-up file (edge case #68). Don't auto-start the stack on every shell: a hidden start that silences its errors failed invisibly and started the wrong stack.
 
 ```bash
 cat >> ~/.bashrc << 'RC'
-eval "$(floci env)"
 shortify_up() { (cd ~/workspace/floci-ui && docker compose start) && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-network-check.sh && bash ~/workspace/shortify-phase1/shortify/scripts/floci-instance-check.sh; }
 shortify_session() { bash ~/workspace/shortify-phase1/shortify/scripts/floci-session.sh && source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh; }
 RC
 source ~/.bashrc
 type shortify_up                            # prints the function
-aws s3 ls                                   # empty output, no error
+(source scripts/shortify-env.sh; aws s3 ls) # from the repo root: lists the buckets, no error
 curl http://localhost:4566/_floci/health    # every service "running"
 ```
 
@@ -344,8 +343,11 @@ terraform apply tfplan        # applies exactly the reviewed plan
 terraform output
 ```
 
-- CI runs `terraform fmt -check -recursive -diff`, `terraform init -backend=false -lockfile=readonly` and `terraform validate` on every PR (required check `Terraform`). Run the same locally before pushing; locally, `fmt -check` also covers `terraform.tfvars`, which CI never sees.
-- The provider reads `AWS_ENDPOINT_URL` and the test credentials from the shell: the code has no Floci settings.
+- CI runs `terraform fmt -check -recursive -diff`, `terraform init -backend=false -lockfile=readonly` and `terraform validate` on every PR, for `infra/terraform` and `infra/bootstrap` (required check `Terraform`). Run the same locally before pushing; locally, `fmt -check` also covers `terraform.tfvars`, which CI never sees.
+- The provider and the S3 backend read `AWS_ENDPOINT_URL`, the region and the dummy credentials from the environment, which `scripts/shortify-env.sh` sets: the code has no Floci settings (edge cases #67, #68).
+- **State is remote** (S3, `shortify/terraform.tfstate` in `shortify-tfstate-000000000000-us-east-1`), locked with `use_lockfile`. A fresh checkout (a new laptop, the runner) initializes it first: `terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl`. `backend-floci.hcl` holds only the bucket, because its name contains the account ID. A plan fails with `Error acquiring the state lock` while someone else holds it: wait, never `force-unlock` a lock you don't own.
+- **The state bucket** is created by its own root, `infra/bootstrap`, whose state stays local and is never committed (the bucket can't live in the state it holds). On an empty account, apply it first: `terraform -chdir=infra/bootstrap init`, then `plan -out tfplan` and `apply tfplan` as below. Check it through the API, not the replan: `get-bucket-versioning` (`Enabled`), `get-bucket-encryption` (`AES256`), `get-public-access-block` (four `True`).
+- **Restore an older state:** every write is a new version of the object. Copy the one you want to a file (listing versions needs a working CLI, edge case #66) and push it: `terraform state push -force <file>`, then a plan must be clean. The pre-migration backup is in `~/shortify-tfstate-backup-2026-10-07.json` (its SHA-256 next to it). `-force` is needed for it because the migration gave the remote state a new lineage (edge case #69).
 - The database password lives only in Secrets Manager: every `psql` against the Terraform-built database needs the `PGPASSWORD=…` prefix from section 6.
 - A failed plan still writes its `-out` file, marked errored. Judge a plan by its exit code, never by the file, and delete leftovers (edge case #44).
 - Never commit `terraform.tfstate`, `tfplan`, `terraform.tfvars` or `tf-debug.log`. Commit `.terraform.lock.hcl`.

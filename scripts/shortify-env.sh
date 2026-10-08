@@ -7,9 +7,20 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "shortify-env: source this file, don't execute it" >&2; exit 1
 fi
 
+# Floci target. This script points a shell at the Floci deployment, so it also sets what
+# the AWS provider, the S3 backend and the AWS CLI read: the repo defines the target, not
+# ~/.bashrc or whoever started the runner (edge cases #65, #68). The values are the ones
+# `floci env` (CLI 0.2.3) prints, dummy credentials included. Real AWS never uses this script.
+export AWS_ENDPOINT_URL=http://localhost.floci.io:4566
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+
 _shortify_tf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/terraform" && pwd)"
+# State is remote (S3): a fresh checkout must init the backend first (runbook section 9).
 if ! _shortify_json=$(terraform -chdir="$_shortify_tf" output -json 2>/dev/null) || [ "$_shortify_json" = "{}" ]; then
-  echo "shortify-env: no Terraform outputs in $_shortify_tf (state missing or empty)" >&2
+  echo "shortify-env: no Terraform outputs in $_shortify_tf: backend not initialized" >&2
+  echo "  (terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl), or the state is empty" >&2
   unset _shortify_tf _shortify_json; return 1
 fi
 

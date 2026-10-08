@@ -17,7 +17,8 @@ cases=0
 # case, so a test can't pass or fail because of the shell it runs in.
 clean=()
 for v in VPC_ID PUB1 PUB2 ALB_SG EC2_SG RDS_SG TG_ARN ALB_DNS DB_PORT DB_SECRET LT_ID LT_VERSION \
-  INSTANCE_ID ANSIBLE_CONFIG ANSIBLE_PLAYBOOK_BIN FLOCI_UI_DIR SHORTIFY_RELEASE_IMAGE; do clean+=(-u "$v"); done
+  INSTANCE_ID ANSIBLE_CONFIG ANSIBLE_PLAYBOOK_BIN FLOCI_UI_DIR SHORTIFY_RELEASE_IMAGE \
+  AWS_ENDPOINT_URL AWS_DEFAULT_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do clean+=(-u "$v"); done
 
 # run <name> <expected exit> <dir> <env assignments and command...>
 # Runs the command in <dir> with the fakes first on PATH; keeps its output and the calls.
@@ -127,6 +128,21 @@ env_case "target group unreadable" 'i-1\n' '<unset>' FAKE_TG_FAIL=1
 before=$failures
 run "env: ANSIBLE_CONFIG points at the repo's ansible.cfg (edge case #50)" 0 "$root" FAKE_TG_IDS='i-1\n' bash -c 'source scripts/shortify-env.sh; echo "ANSIBLE_CONFIG=$ANSIBLE_CONFIG"' && {
   expect out "ANSIBLE_CONFIG=$root/infra/ansible/ansible.cfg"
+}
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+run "env: sets the Floci target before reading Terraform (edge case #68)" 0 "$root" AWS_ENDPOINT_URL=http://elsewhere:1 FAKE_TG_IDS='i-1\n' bash -c 'source scripts/shortify-env.sh; echo "endpoint=$AWS_ENDPOINT_URL region=$AWS_DEFAULT_REGION"' && {
+  expect out "endpoint=http://localhost.floci.io:4566 region=us-east-1"
+  expect calls "output -json (endpoint=http://localhost.floci.io:4566)"
+  refuse calls "elsewhere"
+}
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+run "env: uninitialized backend fails with the init command" 1 "$root" FAKE_TF_FAIL=1 bash -c 'source scripts/shortify-env.sh' && {
+  expect out "init -backend-config=backend-floci.hcl"
+  refuse calls "aws "
 }
 [ "$failures" -eq "$before" ] && ok
 
