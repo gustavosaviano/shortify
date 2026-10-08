@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Fake Terraform: the outputs scripts/shortify-env.sh reads.
-echo "terraform $*" >> "$FAKE_LOG"
+echo "terraform $* (endpoint=${AWS_ENDPOINT_URL:-<unset>})" >> "$FAKE_LOG"
+if [ -n "${FAKE_TF_FAIL:-}" ]; then
+  echo 'Error: Backend initialization required, please run "terraform init"' >&2; exit 1
+fi
 cat << 'JSON'
 {"vpc_id":{"value":"vpc-1"},"public_subnet_ids":{"value":["subnet-a","subnet-b"]},"security_group_ids":{"value":{"alb":"sg-a","app":"sg-p","db":"sg-d"}},"target_group_arn":{"value":"arn:tg"},"alb_dns_name":{"value":"alb.local"},"db_endpoint":{"value":{"address":"10.0.0.2","port":7001}},"db_master_secret_arn":{"value":"arn:secret"},"launch_template":{"value":{"id":"lt-1","version":1}}}
 JSON

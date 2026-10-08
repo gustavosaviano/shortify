@@ -155,6 +155,11 @@ The same failure mode showed up in different places: a call reports success and 
 | `gh run view --log \| cut -f3-` keeps the step name | Its fields are job, step and line; the step is field 2, so filter on `$2` before dropping it |
 | A PC restart keeps WSL's `/tmp` | It clears it: the release tarballs were gone, so the first deploy packages again (`changed=12`) |
 | Only `list-object-versions` breaks on the distro CLI | `list-objects-v2` breaks too: the control failed (edge case #66) |
+| `shortify-env.sh` sets the shell's `AWS_` variables | It set none: `eval "$(floci env)"` in `~/.bashrc` did, so the target depended on a file outside the repo. The script now sets them (edge case #68) |
+| The S3 backend needs path-style URLs against an emulator | On Floci it needed nothing but the environment's endpoint (edge case #67) |
+| A successful `terraform init` proves the backend works | It may write nothing. A write proves it: an apply that stores an output, then `head-object` on the state and on the lock (edge case #67) |
+| Moving local state to S3 keeps its lineage and serial | The content was identical, but both were reset; restoring the old backup needs `state push -force` (edge case #69) |
+| The checkpoint's marker count was current | It said `clicks` 3; it was already 4. One more redirect added exactly one, so the write path was fine and the note was stale |
 
 ---
 
@@ -217,3 +222,6 @@ The end-of-phase test round, run on a healthy baseline:
 27. Does GitHub support its runner on Ubuntu 26.04? (It runs, 2.337.0.)
 28. Why does the runner mask log lines containing `pwd=` (edge case #65)?
 29. Did both versions of the S3 canary survive the restarts (edge case #64)? Answerable once the CLI is fixed (#66).
+30. Does the S3 backend reach Floci with virtual-hosted or path-style URLs (edge case #67)?
+31. Why did the migration to S3 reset the state's lineage and serial (edge case #69)?
+32. Does Floci enforce an S3 public access block, or only store it? (The state bucket's four settings read back `True`.)

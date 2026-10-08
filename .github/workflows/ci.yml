@@ -114,6 +114,20 @@ jobs:
       - name: Validate
         run: terraform validate
 
+      # The bootstrap root (state bucket) gets the same three checks. Steps, not a
+      # matrix: a matrix would rename the required "Terraform" check.
+      - name: Check formatting (bootstrap)
+        working-directory: infra/bootstrap
+        run: terraform fmt -check -recursive -diff
+
+      - name: Initialize (bootstrap, no backend; the committed lock file must match)
+        working-directory: infra/bootstrap
+        run: terraform init -backend=false -input=false -lockfile=readonly
+
+      - name: Validate (bootstrap)
+        working-directory: infra/bootstrap
+        run: terraform validate
+
   scripts:
     name: Scripts
     runs-on: ubuntu-24.04
