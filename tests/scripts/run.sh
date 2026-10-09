@@ -18,7 +18,12 @@ cases=0
 clean=()
 for v in VPC_ID PUB1 PUB2 ALB_SG EC2_SG RDS_SG TG_ARN ALB_DNS DB_PORT DB_SECRET LT_ID LT_VERSION \
   INSTANCE_ID ANSIBLE_CONFIG ANSIBLE_PLAYBOOK_BIN FLOCI_UI_DIR SHORTIFY_RELEASE_IMAGE \
-  AWS_ENDPOINT_URL AWS_DEFAULT_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do clean+=(-u "$v"); done
+  AWS_ENDPOINT_URL AWS_DEFAULT_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY \
+  SHORTIFY_RELEASE_LOCK SHORTIFY_RELEASE_LOCK_WAIT SHORTIFY_RELEASE_LOCK_HELD; do clean+=(-u "$v"); done
+# Every case uses its own lock file, never the laptop's /tmp/shortify-release.lock: a real
+# release in another terminal must not make a test wait, and a test must not block a release.
+# The wait defaults to 5 s instead of 900, so a locking bug fails a case instead of hanging it.
+lock="$work/release.lock"
 
 # run <name> <expected exit> <dir> <env assignments and command...>
 # Runs the command in <dir> with the fakes first on PATH; keeps its output and the calls.
@@ -30,7 +35,8 @@ run() {
   case_failed=0
   : > "$work/calls"
   rm -f "$work/registered"
-  (cd "$dir" && env "${clean[@]}" PATH="$fakes:$PATH" FAKE_LOG="$work/calls" FAKE_STATE="$work" "$@") > "$work/out" 2>&1
+  (cd "$dir" && env "${clean[@]}" PATH="$fakes:$PATH" FAKE_LOG="$work/calls" FAKE_STATE="$work" \
+    SHORTIFY_RELEASE_LOCK="$lock" SHORTIFY_RELEASE_LOCK_WAIT=5 "$@") > "$work/out" 2>&1
   local got=$?
   if [ "$got" -ne "$want" ]; then
     report "exit $got, want $want"
@@ -49,6 +55,15 @@ report() {
 expect() { grep -qF -- "$2" "$work/$1" || report "$1 lacks: $2"; }
 refuse() { if grep -qF -- "$2" "$work/$1"; then report "$1 has: $2"; fi; }
 ok() { echo "ok    $current"; }
+# hold_lock <seconds>: another process takes the release lock, as a running release would.
+# free_lock: it ends (its sleep is killed, so flock exits and the kernel drops the lock).
+hold_lock() {
+  flock -o "$lock" sleep "$1" &
+  holder=$!
+  for _ in $(seq 1 50); do flock -n "$lock" true || return 0; sleep 0.1; done
+  echo "test setup: the holder never took the lock"; exit 1
+}
+free_lock() { pkill -P "$holder" sleep; wait "$holder" 2> /dev/null; }
 
 commit=$(git -C "$root" rev-parse HEAD) || exit 1
 release_env=(TG_ARN=arn:tg LT_ID=lt-1 LT_VERSION=1 PUB1=subnet-a ALB_DNS=alb.local
@@ -108,6 +123,37 @@ run "release: refuses without the env" 1 "$root" bash scripts/release.sh ami-tes
 }
 [ "$failures" -eq "$before" ] && ok
 
+before=$failures
+hold_lock 30
+run "release: a busy lock refuses after the wait and launches nothing" 75 "$root" "${release_env[@]}" SHORTIFY_RELEASE_LOCK_WAIT=1 bash scripts/release.sh ami-test-1 && {
+  expect out "the release lock is busy"
+  expect out "still busy after 1 s; nothing changed"
+  refuse calls "aws "
+}
+free_lock
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+hold_lock 2
+run "release: waits for a busy lock, then runs" 0 "$root" "${release_env[@]}" SHORTIFY_RELEASE_LOCK_WAIT=20 bash scripts/release.sh ami-test-1 && {
+  expect out "waiting up to 20 s"
+  expect calls "ec2 run-instances"
+  expect calls "ec2 terminate-instances"
+}
+free_lock
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+rm -f "$work/linger.pid"
+run "release: a process the deploy leaves behind doesn't keep the lock" 0 "$root" "${release_env[@]}" FAKE_DEPLOY_LINGER=30 bash scripts/release.sh ami-test-1 && {
+  if ! { [ -s "$work/linger.pid" ] && kill -0 "$(cat "$work/linger.pid")" 2> /dev/null; }; then
+    report "the lingering process wasn't running"
+  fi
+  flock -n "$lock" true || report "the lock is still held after the release ended"
+}
+[ -s "$work/linger.pid" ] && kill "$(cat "$work/linger.pid")" 2> /dev/null
+[ "$failures" -eq "$before" ] && ok
+
 # ── scripts/shortify-env.sh: INSTANCE_ID is the target group's one instance ────
 show='source scripts/shortify-env.sh; echo "INSTANCE_ID=${INSTANCE_ID:-<unset>} LT=$LT_ID/$LT_VERSION"'
 env_case() {  # env_case <name> <FAKE_TG_IDS> <expected INSTANCE_ID> [extra env...]
@@ -149,11 +195,14 @@ run "env: uninitialized backend fails with the init command" 1 "$root" FAKE_TF_F
 # ── scripts/floci-session.sh: branches, with its sub-scripts stubbed ───────────
 s="$work/session"
 mkdir -p "$s/scripts" "$s/infra/ansible"
-cp "$root/scripts/floci-session.sh" "$s/scripts/"
+cp "$root/scripts/floci-session.sh" "$root/scripts/release-lock.sh" "$s/scripts/"
 printf '%s\n' 'unset INSTANCE_ID; if [ -n "${FAKE_ID:-}" ]; then export INSTANCE_ID=$FAKE_ID; fi' > "$s/scripts/shortify-env.sh"
 printf '%s\n' 'exit 0' > "$s/scripts/floci-network-check.sh"
 printf '%s\n' 'echo "instance check called"; [ "${FAKE_USABLE:-}" = yes ]' > "$s/scripts/floci-instance-check.sh"
-printf '%s\n' 'echo "release.sh called with $*"; exit "${FAKE_RELEASE_RC:-0}"' > "$s/scripts/release.sh"
+# The stub release.sh takes the lock with the real helper, as release.sh does: the cold path
+# must not wait for a lock its own session holds.
+printf '%s\n' 'source scripts/release-lock.sh; release_lock release "$PWD/scripts/release.sh" "$@"' \
+  'echo "release.sh called with $*"; exit "${FAKE_RELEASE_RC:-0}"' > "$s/scripts/release.sh"
 printf '%s\n' 'echo "release-register.sh called for $INSTANCE_ID"' > "$s/scripts/release-register.sh"
 session_env=(FLOCI_UI_DIR="$work" ANSIBLE_PLAYBOOK_BIN="$fakes/ansible-playbook")
 
@@ -190,6 +239,23 @@ run "session: failed deploy fails the session before the cutover" 1 "$s" "${sess
   expect out "FAILED at step 4/4 (deploy exited 2"
   refuse out "release-register.sh called"
 }
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+run "session: the cold path runs release.sh under the session's lock" 0 "$s" "${session_env[@]}" FAKE_ID=i-a FAKE_USABLE=no SHORTIFY_RELEASE_LOCK_WAIT=2 bash scripts/floci-session.sh && {
+  expect out "release.sh called with ami-ubuntu2404-amd64"
+  refuse out "still busy"
+}
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+hold_lock 30
+run "session: a busy lock stops the session before it changes anything" 75 "$s" "${session_env[@]}" FAKE_ID=i-a FAKE_USABLE=yes SHORTIFY_RELEASE_LOCK_WAIT=1 bash scripts/floci-session.sh && {
+  expect out "session: the release lock was still busy after 1 s"
+  refuse out "== session 1/4"
+  refuse calls "ansible-playbook"
+}
+free_lock
 [ "$failures" -eq "$before" ] && ok
 
 echo "$((cases - failures)) of $cases cases passed"

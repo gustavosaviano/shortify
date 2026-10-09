@@ -160,6 +160,7 @@ The same failure mode showed up in different places: a call reports success and 
 | A successful `terraform init` proves the backend works | It may write nothing. A write proves it: an apply that stores an output, then `head-object` on the state and on the lock (edge case #67) |
 | Moving local state to S3 keeps its lineage and serial | The content was identical, but both were reset; restoring the old backup needs `state push -force` (edge case #69) |
 | The checkpoint's marker count was current | It said `clicks` 3; it was already 4. One more redirect added exactly one, so the write path was fine and the note was stale |
+| A locking bug makes a test fail | It can make the suite hang instead: with the real 900 s wait, breaking the nesting check left the first mutation run stuck. The tests now wait 5 s by default, so the same bug fails 12 cases with exit 75 |
 
 ---
 
@@ -189,6 +190,9 @@ The end-of-phase test round, run on a healthy baseline:
 | Cold path by release | Stop the serving instance through the API, then `shortify_session` | Not usable → a release; packaging skipped (`changed=11`); the stopped instance retired with its container | ✓ ✓ ✓ |
 | Cold boot by release | Restart the PC, then only `shortify_session` (2026-10-04) | Dead instance → a release; the dead one terminated; the old leftover container collected at the Floci start | ✓ ✓ ✓ |
 | Retire `aws_instance.app` | A `removed` block with `destroy = false`, applied behind a gate on the plan's JSON (2026-10-04) | Forgotten, not destroyed; then terminated through the API; every plan clean | ✓ ✓ ✓ |
+| Release lock, busy | Hold `/tmp/shortify-release.lock` with `flock` for 20 s, run the real session with a 3 s wait (2026-10-09) | Waits, then refuses with exit 75 before step 1; the lock is free once the holder ends | ✓ ✓ ✓ |
+| Release lock, free | `shortify_session` with nothing holding the lock (2026-10-09) | No lock message; warm path `changed=0`; the file names the session as holder; free afterwards | ✓ ✓ ✓ ✓ |
+| Release lock, nested | Restart the PC, then `shortify_session` (2026-10-09): the cold path runs `release.sh` inside the session's lock | No lock message; a release replaces the dead instance (`changed=12`), one target, `/health` 200, `session exit=0`; the file names the release as holder; free afterwards | ✓ ✓ ✓ ✓ |
 
 ---
 
