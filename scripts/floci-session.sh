@@ -9,10 +9,16 @@
 #      same process as shipping a version: replace, don't repair (#9, #26). No prompt: a
 #      release only launches one instance from the pinned template and verifies it.
 # Each step runs only if the previous one succeeded; a failure names the step and exits 1.
+# The whole session holds the host's release lock (scripts/release-lock.sh): its in-place
+# deploy must not overlap a release from the pipeline, and its cold path runs release.sh
+# under the same lock instead of taking it again.
 # Run it through shortify_session (~/.bashrc), which re-sources the IDs afterwards:
 # a script can't change its caller's shell variables.
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+# shellcheck source=scripts/release-lock.sh
+source scripts/release-lock.sh || exit 1
+release_lock session "$PWD/scripts/floci-session.sh"
 floci_ui_dir="${FLOCI_UI_DIR:-$HOME/workspace/floci-ui}"
 playbook="${ANSIBLE_PLAYBOOK_BIN:-$HOME/.venvs/shortify-ansible/bin/ansible-playbook}"
 # Floci's only amd64 image (#9). On AWS the pipeline passes the image it built (Phase 3b).

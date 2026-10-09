@@ -117,6 +117,8 @@ docker logs floci-ui-floci-1 --since 5m 2>&1 | grep -i "no docker daemon"     # 
 
 **If the check says not usable, a release replaces the instance** (replace, don't repair): `shortify_session`, or `bash scripts/release.sh ami-ubuntu2404-amd64` after `source scripts/shortify-env.sh` (section 5). Terraform no longer manages an app instance (edge case #62), so there is nothing to `-replace`.
 
+**The release lock.** The whole session, and every release, holds `/tmp/shortify-release.lock` (`scripts/release-lock.sh`), so a manual session never overlaps a release from the pipeline. When it's busy, the script prints who holds it and waits up to 15 minutes; then it stops with `the release lock was still busy ... nothing changed` and exit 75. To see the holder: `cat /tmp/shortify-release.lock` (a hint only; the lock itself is in the kernel). Deleting the file unlocks nothing: end the holder, or wait for it. Tested busy, free and nested (a cold boot whose release runs inside the session's lock) on 2026-10-09 (edge case #70).
+
 **Baseline, once the app is deployed and registered.** This must pass before any work or test:
 
 ```bash

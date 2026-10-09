@@ -11,7 +11,9 @@
 #   5. terminate every other instance a release launched (ManagedBy=release), leftovers of
 #      failed releases included. Instances with any other ManagedBy are only reported.
 # A failure before or during the cutover leaves the old instance serving and the new one
-# running for inspection; the next successful release terminates it. One release at a time.
+# running for inspection; the next successful release terminates it. One release at a time:
+# the whole run holds the host's release lock (scripts/release-lock.sh), shared with the
+# session's in-place deploy, and waits for it if a release or a session is running.
 # Floci only for now: steps 2-3 use Floci's SSH host ports (inventories/floci). On AWS,
 # step 2 becomes `aws ec2 wait instance-status-ok` and the inventory changes (not tested).
 # Usage, after sourcing scripts/shortify-env.sh:  bash scripts/release.sh <image-id>
@@ -26,6 +28,9 @@ image="${1:-}"
 if [[ ! "$image" =~ ^ami-[a-z0-9-]+$ ]]; then
   echo "usage: bash scripts/release.sh <image-id>   (got '$image')" >&2; exit 2
 fi
+# shellcheck source=scripts/release-lock.sh
+source scripts/release-lock.sh || exit 1
+release_lock release "$PWD/scripts/release.sh" "$image"
 commit=$(git rev-parse HEAD) || fail "0/5 (read the commit)"
 # The playbook refuses uncommitted app changes too, but only after an instance exists.
 if [ -n "$(git status --porcelain -- app requirements.txt)" ]; then
