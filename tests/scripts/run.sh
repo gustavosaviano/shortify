@@ -192,6 +192,32 @@ run "env: uninitialized backend fails with the init command" 1 "$root" FAKE_TF_F
 }
 [ "$failures" -eq "$before" ] && ok
 
+# ── scripts/floci-target.sh: the target a fresh checkout needs before init (#72) ──
+before=$failures
+run "target: sets the four Floci variables and calls nothing" 0 "$root" AWS_ENDPOINT_URL=http://elsewhere:1 bash -c 'source scripts/floci-target.sh; env | grep "^AWS_" | sort' && {
+  expect out "AWS_ACCESS_KEY_ID=test"
+  expect out "AWS_DEFAULT_REGION=us-east-1"
+  expect out "AWS_ENDPOINT_URL=http://localhost.floci.io:4566"
+  expect out "AWS_SECRET_ACCESS_KEY=test"
+  refuse out "elsewhere"
+  refuse calls "terraform"
+  refuse calls "aws "
+}
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+run "target: refuses to be executed" 1 "$root" bash scripts/floci-target.sh && {
+  expect out "source this file"
+}
+[ "$failures" -eq "$before" ] && ok
+
+before=$failures
+run "env: an uninitialized backend still leaves the target, and no ID" 0 "$root" FAKE_TF_FAIL=1 bash -c 'source scripts/shortify-env.sh; echo "rc=$? endpoint=${AWS_ENDPOINT_URL:-<unset>} vpc=${VPC_ID:-<unset>}"' && {
+  expect out "rc=1 endpoint=http://localhost.floci.io:4566 vpc=<unset>"
+  expect out "source scripts/floci-target.sh; terraform -chdir=infra/terraform init"
+}
+[ "$failures" -eq "$before" ] && ok
+
 # ── scripts/floci-session.sh: branches, with its sub-scripts stubbed ───────────
 s="$work/session"
 mkdir -p "$s/scripts" "$s/infra/ansible"

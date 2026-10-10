@@ -1,26 +1,22 @@
 # shellcheck shell=bash  # sourced, never executed, so it has no shebang
 # Session helper: exports the IDs the runbook uses, read from Terraform outputs.
 # Source it, don't run it:  source scripts/shortify-env.sh
-# Fails loudly and exports nothing if the state or any output is missing:
-# an empty or "None" ID must never reach an AWS command (edge cases #7, #22).
+# It sets the Floci target first (scripts/floci-target.sh). After that it's all-or-nothing:
+# if the state or any output is missing, it fails loudly and exports no ID, because an
+# empty or "None" ID must never reach an AWS command (edge cases #7, #22).
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   echo "shortify-env: source this file, don't execute it" >&2; exit 1
 fi
 
-# Floci target. This script points a shell at the Floci deployment, so it also sets what
-# the AWS provider, the S3 backend and the AWS CLI read: the repo defines the target, not
-# ~/.bashrc or whoever started the runner (edge cases #65, #68). The values are the ones
-# `floci env` (CLI 0.2.3) prints, dummy credentials included. Real AWS never uses this script.
-export AWS_ENDPOINT_URL=http://localhost.floci.io:4566
-export AWS_DEFAULT_REGION=us-east-1
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
+# shellcheck source=scripts/floci-target.sh
+source "$(dirname "${BASH_SOURCE[0]}")/floci-target.sh" || return 1
 
 _shortify_tf="$(cd "$(dirname "${BASH_SOURCE[0]}")/../infra/terraform" && pwd)"
 # State is remote (S3): a fresh checkout must init the backend first (runbook section 9).
 if ! _shortify_json=$(terraform -chdir="$_shortify_tf" output -json 2>/dev/null) || [ "$_shortify_json" = "{}" ]; then
   echo "shortify-env: no Terraform outputs in $_shortify_tf: backend not initialized" >&2
-  echo "  (terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl), or the state is empty" >&2
+  echo "  (source scripts/floci-target.sh; terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl)," >&2
+  echo "  or the state is empty" >&2
   unset _shortify_tf _shortify_json; return 1
 fi
 
