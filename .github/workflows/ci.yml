@@ -1,4 +1,6 @@
 # CI: runs on every push to main and every pull request, on GitHub-hosted runners only.
+# After the four checks pass on a push to main, the Dispatch deploy job asks the private
+# gustavosaviano/shortify-deploy to release that commit (runbook section 12).
 # Security rules for this repo (public, with a self-hosted deploy runner):
 #   - never use pull_request_target
 #   - CI jobs never run on the self-hosted runner
@@ -153,3 +155,42 @@ jobs:
 
       - name: Script tests (fake CLIs)
         run: bash tests/scripts/run.sh
+
+  # Starts the deploy of this commit in the private repo, whose self-hosted runner does the
+  # release (knowledge base: why the deploy runner lives in a separate private repo).
+  # Only on a push to main and only after the four checks pass: a pull request never deploys,
+  # and a fork's workflow never gets the secret. The token is a fine-grained PAT that can only
+  # start workflows in shortify-deploy (Actions: write there, nothing else); the deploy job
+  # re-checks the commit itself, so the token can't deploy anything but main's head.
+  dispatch:
+    name: Dispatch deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [lint, test, terraform, scripts]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # API version pinned: with 2026-03-10 a dispatch answers 200 with the new run's ID; an
+      # older version answers an empty 204, which proves nothing (edge case #71).
+      - name: Start the deploy in shortify-deploy
+        env:
+          TOKEN: ${{ secrets.SHORTIFY_DEPLOY_DISPATCH_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::secret SHORTIFY_DEPLOY_DISPATCH_TOKEN is not set"
+            exit 1
+          fi
+          code=$(curl -sS -o "$RUNNER_TEMP/dispatch.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"sha\":\"$SHA\"}}" \
+            https://api.github.com/repos/gustavosaviano/shortify-deploy/actions/workflows/deploy.yml/dispatches)
+          run_id=$(jq -r '.workflow_run_id // empty' "$RUNNER_TEMP/dispatch.json")
+          if [ "$code" != 200 ] || [ -z "$run_id" ]; then
+            echo "::error::dispatch failed: HTTP $code, $(jq -r '.message // "no message"' "$RUNNER_TEMP/dispatch.json")"
+            exit 1
+          fi
+          echo "deploy of ${SHA:0:7} started: shortify-deploy run $run_id"
+          echo "Deploy of ${SHA:0:7} started: shortify-deploy run $run_id." >> "$GITHUB_STEP_SUMMARY"
