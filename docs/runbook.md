@@ -69,7 +69,7 @@ gh auth status
 
 ## 2. Session helpers
 
-Shell variables die with the terminal. `scripts/shortify-env.sh` (in the repo) exports the IDs from `terraform output`, so they always match what Terraform built. It's all-or-nothing: if the state or any output is missing, it prints an error and exports nothing, so an empty or `None` ID can't reach a command (edge case #22). `shortify_up` sources it.
+Shell variables die with the terminal. `scripts/shortify-env.sh` (in the repo) exports the IDs from `terraform output`, so they always match what Terraform built. It first sets the Floci target (`scripts/floci-target.sh`: endpoint, region, dummy credentials). The IDs are all-or-nothing: if the state or any output is missing, it prints an error and exports no ID, so an empty or `None` ID can't reach a command (edge case #22). `shortify_up` sources it.
 
 ```bash
 source ~/workspace/shortify-phase1/shortify/scripts/shortify-env.sh
@@ -346,8 +346,8 @@ terraform output
 ```
 
 - CI runs `terraform fmt -check -recursive -diff`, `terraform init -backend=false -lockfile=readonly` and `terraform validate` on every PR, for `infra/terraform` and `infra/bootstrap` (required check `Terraform`). Run the same locally before pushing; locally, `fmt -check` also covers `terraform.tfvars`, which CI never sees.
-- The provider and the S3 backend read `AWS_ENDPOINT_URL`, the region and the dummy credentials from the environment, which `scripts/shortify-env.sh` sets: the code has no Floci settings (edge cases #67, #68).
-- **State is remote** (S3, `shortify/terraform.tfstate` in `shortify-tfstate-000000000000-us-east-1`), locked with `use_lockfile`. A fresh checkout (a new laptop, the runner) initializes it first: `terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl`. `backend-floci.hcl` holds only the bucket, because its name contains the account ID. A plan fails with `Error acquiring the state lock` while someone else holds it: wait, never `force-unlock` a lock you don't own.
+- The provider and the S3 backend read `AWS_ENDPOINT_URL`, the region and the dummy credentials from the environment, which `scripts/floci-target.sh` sets (`scripts/shortify-env.sh` sources it): the code has no Floci settings (edge cases #67, #68, #72).
+- **State is remote** (S3, `shortify/terraform.tfstate` in `shortify-tfstate-000000000000-us-east-1`), locked with `use_lockfile`. A fresh checkout (a new laptop, the runner) initializes it first: `source scripts/floci-target.sh`, then `terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl`. `shortify-env.sh` can't come first, because it reads `terraform output` (edge case #72). `backend-floci.hcl` holds only the bucket, because its name contains the account ID. A plan fails with `Error acquiring the state lock` while someone else holds it: wait, never `force-unlock` a lock you don't own.
 - **The state bucket** is created by its own root, `infra/bootstrap`, whose state stays local and is never committed (the bucket can't live in the state it holds). On an empty account, apply it first: `terraform -chdir=infra/bootstrap init`, then `plan -out tfplan` and `apply tfplan` as below. Check it through the API, not the replan: `get-bucket-versioning` (`Enabled`), `get-bucket-encryption` (`AES256`), `get-public-access-block` (four `True`).
 - **Restore an older state:** every write is a new version of the object. Copy the one you want to a file (listing versions needs a working CLI, edge case #66) and push it: `terraform state push -force <file>`, then a plan must be clean. The pre-migration backup is in `~/shortify-tfstate-backup-2026-10-07.json` (its SHA-256 next to it). `-force` is needed for it because the migration gave the remote state a new lineage (edge case #69).
 - The database password lives only in Secrets Manager: every `psql` against the Terraform-built database needs the `PGPASSWORD=…` prefix from section 6.

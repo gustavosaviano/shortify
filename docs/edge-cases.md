@@ -291,6 +291,9 @@ The provider and the backend read `AWS_ENDPOINT_URL`, the credentials and the re
 **71. What `workflow_dispatch` returns depends on the REST API version.** *(documented)*
 `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches` needs a fine-grained token with Actions: write. With `X-GitHub-Api-Version: 2026-03-10` (the latest when checked, 2026-10-09) it answers `200` with `workflow_run_id`, `run_url` and `html_url`; with `2022-11-28` it answers an empty `204`, unless the body sends `return_run_details: true`. A 204 only says the request was accepted, not that a run exists, so the dispatch job pins the version and fails unless it gets a run ID. Not exercised yet: it will be when the dispatch job is built.
 
+**72. A fresh checkout's `init` only worked because `shortify-env.sh` failed halfway.** *(tested)*
+The S3 backend needs the Floci target (`AWS_ENDPOINT_URL` and the rest) for `terraform init`, and the only place that set it was `scripts/shortify-env.sh`, which refuses to run before `init` because it reads `terraform output`. Its header said it "exports nothing" on failure, and its error message told you to run `init`. That worked by accident: the script exported the target before it read Terraform, so the failed `source` left the four variables behind (reproduced with the fake CLIs: `source` returned 1, and the four `AWS_` variables were set). The runner's first deploy starts from exactly that fresh checkout. The target now lives in `scripts/floci-target.sh`, which reads nothing and is safe before `init`; `shortify-env.sh` sources it first, so leaving the target set when the IDs fail is now intended and tested. A fresh checkout: `source scripts/floci-target.sh`, then `terraform -chdir=infra/terraform init -backend-config=backend-floci.hcl`.
+
 ---
 
 ## Floci vs real AWS
