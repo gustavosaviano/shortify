@@ -164,6 +164,7 @@ The same failure mode showed up in different places: a call reports success and 
 | `Bad credentials` means a non-empty value was sent | GitHub says the same for an empty token; the prompt had received nothing (`length=0`). Measure the input first (edge case #73) |
 | The deploy job's `python3` is `/usr/bin/python3` | It's the Ansible venv's, because the venv comes first in the job's explicit `PATH`. Harmless: `shortify-env.sh` only uses `json` and `shlex` |
 | A `grep` for the error text proved the input check fired | It matched the runner's echo of the step's source, which is printed whether the line runs or not. The step results (failure, then two skipped steps) were the proof; grep for `##[error]` instead |
+| `grep -o 'run [0-9]*'` finds the dispatched run's ID in the CI log | `[0-9]*` also matches zero digits, and the first match was the runner's echo of the step's source (`run $run_id`). The ID came out empty, the watcher stopped, and the release of `1d68987` went unsampled. Find the deploy run by its title (`Deploy <full SHA>`) instead, and require a digit (`[0-9][0-9]*`) |
 | A locking bug makes a test fail | It can make the suite hang instead: with the real 900 s wait, breaking the nesting check left the first mutation run stuck. The tests now wait 5 s by default, so the same bug fails 12 cases with exit 75 |
 
 ---
@@ -200,6 +201,7 @@ The end-of-phase test round, run on a healthy baseline:
 | Deploy job controls | Dispatch `sha=not-a-sha`, then a superseded commit (`863d708`) (2026-10-10) | The first fails in the input check, the second is skipped as a success after reading `main`'s head with the job's token; neither checks out or releases | ✓ ✓ ✓ |
 | First release through the pipeline | Dispatch `ab65da3` (`main`'s head) while sampling `/health` once a second (2026-10-10) | Four checks found green; checkout and every tool found under `env -i`; a release (`changed=11`, the tarball was already in `/tmp`); the old instance retired; no failed sample | ✓ ✓ ✓ ✓ ✓ (240 samples, 0 failed) |
 | Dispatch token scope | Before storing it: a read-only call, a dispatch to `shortify-deploy`, a dispatch to the public repo (2026-10-10) | 200; 200 with a run ID; refused | ✓ ✓ ✓ (403) |
+| Merge to production | Merge PR #34 and touch nothing else (2026-10-10) | `Dispatch deploy` succeeds on the push to `main`; the deploy run's title carries the merge's SHA; a release replaces the serving instance; `/health` stays 200 | ✓ ✓ ✓ ? (CI and the dispatched run ID matched, 38077345428; `changed=12`; the release was not sampled, see the watcher correction) |
 | Fresh checkout (#72) | Export the staged files into an empty folder, start a shell with `env -i`, source `shortify-env.sh` first (control), then `floci-target.sh`, `init`, `shortify-env.sh` (2026-10-09) | No inherited `AWS_`; the control fails with the new hint and exports no ID; `init` configures the S3 backend; the IDs come from the real state | ✓ ✓ ✓ ✓ |
 
 ---
