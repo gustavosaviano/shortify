@@ -161,6 +161,9 @@ The same failure mode showed up in different places: a call reports success and 
 | Moving local state to S3 keeps its lineage and serial | The content was identical, but both were reset; restoring the old backup needs `state push -force` (edge case #69) |
 | The checkpoint's marker count was current | It said `clicks` 3; it was already 4. One more redirect added exactly one, so the write path was fine and the note was stale |
 | `shortify-env.sh` exports nothing when it fails | It had already exported the Floci target, and that's what made its own `init` hint work on a fresh checkout. Now on purpose: the target comes from `floci-target.sh`, sourced first (edge case #72) |
+| `Bad credentials` means a non-empty value was sent | GitHub says the same for an empty token; the prompt had received nothing (`length=0`). Measure the input first (edge case #73) |
+| The deploy job's `python3` is `/usr/bin/python3` | It's the Ansible venv's, because the venv comes first in the job's explicit `PATH`. Harmless: `shortify-env.sh` only uses `json` and `shlex` |
+| A `grep` for the error text proved the input check fired | It matched the runner's echo of the step's source, which is printed whether the line runs or not. The step results (failure, then two skipped steps) were the proof; grep for `##[error]` instead |
 | A locking bug makes a test fail | It can make the suite hang instead: with the real 900 s wait, breaking the nesting check left the first mutation run stuck. The tests now wait 5 s by default, so the same bug fails 12 cases with exit 75 |
 
 ---
@@ -194,6 +197,9 @@ The end-of-phase test round, run on a healthy baseline:
 | Release lock, busy | Hold `/tmp/shortify-release.lock` with `flock` for 20 s, run the real session with a 3 s wait (2026-10-09) | Waits, then refuses with exit 75 before step 1; the lock is free once the holder ends | ✓ ✓ ✓ |
 | Release lock, free | `shortify_session` with nothing holding the lock (2026-10-09) | No lock message; warm path `changed=0`; the file names the session as holder; free afterwards | ✓ ✓ ✓ ✓ |
 | Release lock, nested | Restart the PC, then `shortify_session` (2026-10-09): the cold path runs `release.sh` inside the session's lock | No lock message; a release replaces the dead instance (`changed=12`), one target, `/health` 200, `session exit=0`; the file names the release as holder; free afterwards | ✓ ✓ ✓ ✓ |
+| Deploy job controls | Dispatch `sha=not-a-sha`, then a superseded commit (`863d708`) (2026-10-10) | The first fails in the input check, the second is skipped as a success after reading `main`'s head with the job's token; neither checks out or releases | ✓ ✓ ✓ |
+| First release through the pipeline | Dispatch `ab65da3` (`main`'s head) while sampling `/health` once a second (2026-10-10) | Four checks found green; checkout and every tool found under `env -i`; a release (`changed=11`, the tarball was already in `/tmp`); the old instance retired; no failed sample | ✓ ✓ ✓ ✓ ✓ (240 samples, 0 failed) |
+| Dispatch token scope | Before storing it: a read-only call, a dispatch to `shortify-deploy`, a dispatch to the public repo (2026-10-10) | 200; 200 with a run ID; refused | ✓ ✓ ✓ (403) |
 | Fresh checkout (#72) | Export the staged files into an empty folder, start a shell with `env -i`, source `shortify-env.sh` first (control), then `floci-target.sh`, `init`, `shortify-env.sh` (2026-10-09) | No inherited `AWS_`; the control fails with the new hint and exports no ID; `init` configures the S3 backend; the IDs come from the real state | ✓ ✓ ✓ ✓ |
 
 ---
