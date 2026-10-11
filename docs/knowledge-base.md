@@ -417,6 +417,9 @@ CI's own `concurrency` (`ci-${{ github.ref }}`, `cancel-in-progress: true`) canc
 **Why keep the runner's automatic updates on?**
 GitHub stops queueing jobs to a self-hosted runner that falls more than 30 days behind a new runner version, or misses a critical security update. With updates off, deploys would one day stop on their own.
 
+**Why isn't the runner a service?**
+A release is only safe when what it deploys to is up: Docker Desktop, Floci and the database. A service would start the runner with WSL and hand it a queued job before any of that was checked, and the job would fail, or wait on the host lock behind the session. Started by hand once `shortify_session` prints `ready`, the runner only ever releases into an environment that was just verified (tested from a cold boot, 2026-10-11). A service wouldn't make the laptop always on either: WSL doesn't start with Windows. The cost is that a merge waits until someone is at the laptop, for at most 24 hours; then GitHub cancels the job and `main`'s head is dispatched by hand. systemd works in this WSL (`systemd=true`, `running`) and `svc.sh` exists, so a service that the session starts and stops stays an option; an always-on deploy target comes with Phase 5.
+
 ---
 
 ## Terraform

@@ -412,14 +412,14 @@ Register once. The registration token is short-lived and never printed:
 
 The labels are `self-hosted,Linux,X64,shortify-deploy`, and jobs use `runs-on: [self-hosted, Linux, X64, shortify-deploy]`. `config.sh` also generates `svc.sh`. Not `--ephemeral`: only verified commits from `main` run there.
 
-Run it in its own terminal (foreground for now; how it starts is still to decide): `cd ~/actions-runner-shortify-deploy && ./run.sh`, until it prints `Listening for Jobs`. Check from GitHub's side:
+Run it in its own terminal, in the foreground, and start it only after `shortify_session` prints `ready` (knowledge base: why the runner isn't a service): `cd ~/actions-runner-shortify-deploy && ./run.sh`, until it prints `Listening for Jobs`. Check from GitHub's side:
 
     gh api repos/gustavosaviano/shortify-deploy/actions/runners --jq '.runners[] | [.name, .status, .busy] | @tsv'
     gh api repos/gustavosaviano/shortify/actions/runners --jq .total_count   # the public repo: must be 0
 
 A job inherits the environment of the shell that started the runner (edge case #65), so workflows declare their own `env:` and `PATH`. The read-only probe (`.github/workflows/probe.yml` in `shortify-deploy`, manual trigger only) prints what a job sees. Stop the runner with Ctrl+C.
 
-**The deploy workflow** (`.github/workflows/deploy.yml` in `shortify-deploy`). A merge to `main` starts it: after the four checks pass, the `Dispatch deploy` job in `ci.yml` sends the commit's SHA. The runner must be running; if it isn't, the job waits in the queue until it comes back (how long GitHub keeps a queued job isn't verified here). The job:
+**The deploy workflow** (`.github/workflows/deploy.yml` in `shortify-deploy`). A merge to `main` starts it: after the four checks pass, the `Dispatch deploy` job in `ci.yml` sends the commit's SHA. The runner must be running; if it isn't, the job waits in the queue until it comes back, for at most 24 hours: then GitHub cancels it (Actions limits). Recover by dispatching `main`'s head by hand (below); the job re-checks the commit, so repeating it is safe. The job:
 
 1. checks the input (40 hex characters), then asks GitHub whether it's `main`'s head (if not: skipped as superseded, a success) and whether `Lint`, `Test`, `Terraform` and `Scripts` passed on it (if not: failure);
 2. checks out exactly that commit;

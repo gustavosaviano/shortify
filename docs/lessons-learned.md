@@ -166,6 +166,7 @@ The same failure mode showed up in different places: a call reports success and 
 | A `grep` for the error text proved the input check fired | It matched the runner's echo of the step's source, which is printed whether the line runs or not. The step results (failure, then two skipped steps) were the proof; grep for `##[error]` instead |
 | `grep -o 'run [0-9]*'` finds the dispatched run's ID in the CI log | `[0-9]*` also matches zero digits, and the first match was the runner's echo of the step's source (`run $run_id`). The ID came out empty, the watcher stopped, and the release of `1d68987` went unsampled. Find the deploy run by its title (`Deploy <full SHA>`) instead, and require a digit (`[0-9][0-9]*`) |
 | A locking bug makes a test fail | It can make the suite hang instead: with the real 900 s wait, breaking the nesting check left the first mutation run stuck. The tests now wait 5 s by default, so the same bug fails 12 cases with exit 75 |
+| `gh … --jq` prints `null` when nothing matches, so the runbook's watch loop (wait until the run ID is non-empty) would stop at once | It prints nothing: measured with a title that can't exist, `d=[] len=0` (gh 2.101.0, 2026-10-11). The loop is correct, but it relies on this; the deploy watch still fails loudly if the ID is wrong |
 
 ---
 
@@ -203,6 +204,8 @@ The end-of-phase test round, run on a healthy baseline:
 | Dispatch token scope | Before storing it: a read-only call, a dispatch to `shortify-deploy`, a dispatch to the public repo (2026-10-10) | 200; 200 with a run ID; refused | ✓ ✓ ✓ (403) |
 | Merge to production | Merge PR #34 and touch nothing else (2026-10-10) | `Dispatch deploy` succeeds on the push to `main`; the deploy run's title carries the merge's SHA; a release replaces the serving instance; `/health` stays 200 | ✓ ✓ ✓ — (CI and the dispatched run ID matched, 38077345428; `changed=12`; the release was not sampled, see the watcher correction; measured on the next merge, below) |
 | Merge to production, sampled | Sample `/health` once a second from before merging PR #35 until its deploy run ends, found by its title (2026-10-10) | The same four, with no failed sample | ✓ ✓ ✓ ✓ (deploy run 38089703239; `changed=12`, `i-9b4d70eede3cc167d` replaced `i-30c7fcdbb79961aa8`; 335 samples, 0 failed) |
+| Merge to production, sampled again | Same, on PR #36's merge, then one redirect through the ALB and an unknown code (2026-10-11) | No failed sample; the new instance reads and writes the database; the unknown code isn't redirected | ✓ ✓ ✓ (deploy run 38107056074; `i-21a99db44c227b7cf` replaced `i-9b4d70eede3cc167d`; 921 samples, 0 failed; `COMENk` 302, `clicks` 7 → 8; `zzzzzz` 404) |
+| Cold boot, then the runner | Restart the PC, run `shortify_session`, and only after `ready` start the runner (2026-10-11) | Dead instance → a release (`changed=12`); runner online with no job to pick up; marker unchanged | ✓ ✓ ✓ (`i-a9099129f085c24c9` replaced `i-21a99db44c227b7cf`; `COMENk` still 8) |
 | Fresh checkout (#72) | Export the staged files into an empty folder, start a shell with `env -i`, source `shortify-env.sh` first (control), then `floci-target.sh`, `init`, `shortify-env.sh` (2026-10-09) | No inherited `AWS_`; the control fails with the new hint and exports no ID; `init` configures the S3 backend; the IDs come from the real state | ✓ ✓ ✓ ✓ |
 
 ---
