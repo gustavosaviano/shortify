@@ -61,3 +61,25 @@ def test_metrics_counts_links(client):
     shorten(client)
     shorten(client)
     assert client.get("/metrics").json()["total_links"] == 2
+
+
+def test_version_is_dev_without_a_release_file(client):
+    # Running from source (no app/VERSION written by a build), the app reports "dev".
+    assert client.get("/version").json() == {"version": "dev"}
+
+
+def test_read_version_uses_the_release_file(tmp_path):
+    from app.main import read_version
+
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("3d3c42e5aac5ba805825da76410c181273ba90b1\n")
+    assert read_version(version_file) == "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    assert read_version(tmp_path / "missing") == "dev"
+
+
+def test_short_url_uses_base_url(client, monkeypatch):
+    import app.main
+
+    monkeypatch.setattr(app.main, "BASE_URL", "https://go.brand.com")
+    body = shorten(client)
+    assert body["short_url"] == f"https://go.brand.com/{body['short_code']}"

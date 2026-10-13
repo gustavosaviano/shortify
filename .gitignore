@@ -13,3 +13,6 @@ __pycache__/
 .venv/
 tfplan
 tf-debug.log
+
+# Written by the CI build into the release; never committed
+app/VERSION
